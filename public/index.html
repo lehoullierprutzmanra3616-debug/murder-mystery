@@ -1,0 +1,4517 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>密室剧本杀 - 在线多人联机</title>
+<script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+<style>
+  /* ========== RESET & BASE ========== */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg-primary: #0a0a0f;
+    --bg-secondary: #12121a;
+    --bg-card: #1a1a2e;
+    --bg-card-hover: #22223a;
+    --border: #2a2a3e;
+    --text-primary: #e0e0e0;
+    --text-secondary: #8888aa;
+    --text-dim: #555577;
+    --accent-red: #c0392b;
+    --accent-red-glow: rgba(192, 57, 43, 0.3);
+    --accent-gold: #d4a017;
+    --accent-gold-glow: rgba(212, 160, 23, 0.3);
+    --accent-blue: #2980b9;
+    --accent-green: #27ae60;
+    --accent-purple: #8e44ad;
+    --radius: 8px;
+    --radius-lg: 12px;
+    --shadow: 0 4px 24px rgba(0,0,0,0.5);
+  }
+  body {
+    font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    min-height: 100vh;
+    overflow: hidden;
+  }
+  /* animated bg */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background: 
+      radial-gradient(ellipse at 20% 50%, rgba(139,0,0,0.08) 0%, transparent 50%),
+      radial-gradient(ellipse at 80% 20%, rgba(75,0,130,0.06) 0%, transparent 50%),
+      radial-gradient(ellipse at 50% 80%, rgba(25,25,112,0.06) 0%, transparent 50%);
+    pointer-events: none; z-index: 0;
+    animation: bgPulse 15s ease-in-out infinite alternate;
+  }
+  @keyframes bgPulse {
+    0% { opacity: 0.6; }
+    100% { opacity: 1; }
+  }
+
+  /* ========== SCREENS ========== */
+  .screen { display: none; position: relative; z-index: 1; height: 100vh; }
+  .screen.active { display: flex; }
+
+  /* ========== LOBBY ========== */
+  #lobby {
+    flex-direction: column; align-items: center; justify-content: center;
+    gap: 24px; padding: 20px;
+  }
+  .lobby-title {
+    font-size: 42px; font-weight: 800; letter-spacing: 4px;
+    background: linear-gradient(135deg, var(--accent-red), var(--accent-gold));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    text-shadow: none; filter: drop-shadow(0 0 20px var(--accent-red-glow));
+    text-align: center;
+  }
+  .lobby-subtitle {
+    color: var(--text-secondary); font-size: 16px; letter-spacing: 2px;
+  }
+  .lobby-box {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); padding: 32px; width: 420px; max-width: 95vw;
+    box-shadow: var(--shadow);
+  }
+  .lobby-box h2 { font-size: 18px; margin-bottom: 16px; color: var(--accent-gold); }
+  .input-group { margin-bottom: 16px; }
+  .input-group label { display: block; font-size: 13px; color: var(--text-secondary); margin-bottom: 6px; }
+  .input-group input {
+    width: 100%; padding: 12px 16px; background: var(--bg-secondary);
+    border: 1px solid var(--border); border-radius: var(--radius);
+    color: var(--text-primary); font-size: 15px; outline: none;
+    transition: border-color 0.2s;
+  }
+  .input-group input:focus { border-color: var(--accent-gold); }
+  .input-group input::placeholder { color: var(--text-dim); }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    padding: 12px 24px; border: none; border-radius: var(--radius);
+    font-size: 15px; font-weight: 600; cursor: pointer;
+    transition: all 0.2s; letter-spacing: 1px;
+  }
+  .btn:active { transform: scale(0.97); }
+  .btn-red {
+    background: linear-gradient(135deg, var(--accent-red), #922b21);
+    color: white; box-shadow: 0 4px 16px var(--accent-red-glow);
+  }
+  .btn-red:hover { box-shadow: 0 6px 24px var(--accent-red-glow); }
+  .btn-gold {
+    background: linear-gradient(135deg, var(--accent-gold), #b8860b);
+    color: #0a0a0f; box-shadow: 0 4px 16px var(--accent-gold-glow);
+  }
+  .btn-gold:hover { box-shadow: 0 6px 24px var(--accent-gold-glow); }
+  .btn-outline {
+    background: transparent; color: var(--text-secondary);
+    border: 1px solid var(--border);
+  }
+  .btn-outline:hover { border-color: var(--text-secondary); color: var(--text-primary); }
+  .btn-sm { padding: 8px 16px; font-size: 13px; }
+  .btn-block { width: 100%; }
+  .lobby-actions { display: flex; gap: 12px; margin-top: 8px; }
+  .lobby-actions .btn { flex: 1; }
+  .error-msg { color: var(--accent-red); font-size: 13px; margin-top: 8px; min-height: 20px; }
+  .room-code-display {
+    text-align: center; margin: 16px 0; padding: 16px;
+    background: var(--bg-secondary); border-radius: var(--radius);
+    border: 1px dashed var(--border);
+  }
+  .room-code-display .code {
+    font-size: 32px; font-weight: 800; letter-spacing: 8px;
+    color: var(--accent-gold);
+  }
+  .room-code-display .label { font-size: 12px; color: var(--text-dim); margin-bottom: 4px; }
+  .player-list { list-style: none; margin-top: 12px; }
+  .player-list li {
+    padding: 8px 12px; margin-bottom: 4px; border-radius: var(--radius);
+    background: var(--bg-secondary); font-size: 14px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .player-list .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent-green); }
+
+  /* ========== WAITING ROOM ========== */
+  #waiting {
+    flex-direction: column; height: 100vh;
+  }
+  .waiting-header {
+    padding: 16px 24px; background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .waiting-header h1 { font-size: 18px; color: var(--accent-gold); }
+  .waiting-body {
+    flex: 1; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 24px; padding: 20px; overflow-y: auto;
+  }
+  .waiting-players {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;
+    max-width: 500px; width: 100%;
+  }
+  .waiting-player-card {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); padding: 20px; text-align: center;
+    transition: all 0.3s;
+  }
+  .waiting-player-card.filled { border-color: var(--accent-gold); }
+  .waiting-player-card .avatar { font-size: 32px; margin-bottom: 8px; }
+  .waiting-player-card .name { font-size: 14px; color: var(--text-secondary); }
+  .waiting-player-card.filled .name { color: var(--text-primary); }
+
+  /* ========== GAME SCREEN ========== */
+  #game {
+    display: flex; flex-direction: column; height: 100vh; overflow: hidden;
+  }
+  .game-header {
+    padding: 8px 16px; background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 13px; flex-shrink: 0; z-index: 2;
+  }
+  .game-header .header-left { display: flex; align-items: center; gap: 12px; }
+  .game-header .header-center { display: flex; align-items: center; gap: 8px; }
+  .game-header .header-right { display: flex; align-items: center; gap: 8px; }
+  .game-header .phase-badge {
+    padding: 4px 12px; border-radius: 20px; font-weight: 600;
+    background: var(--accent-red); color: white; font-size: 12px;
+  }
+  .game-header .timer {
+    color: var(--accent-gold); font-weight: 700; font-size: 16px;
+    font-variant-numeric: tabular-nums;
+  }
+  .notepad-btn {
+    display: flex; align-items: center; gap: 5px;
+    padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 600;
+    background: rgba(212,160,23,0.15); color: var(--accent-gold);
+    border: 1px solid rgba(212,160,23,0.3); cursor: pointer;
+    transition: all 0.15s; white-space: nowrap;
+  }
+  .notepad-btn:hover { background: rgba(212,160,23,0.25); border-color: var(--accent-gold); }
+  .notepad-btn .notepad-badge {
+    background: var(--accent-gold); color: var(--bg-primary);
+    border-radius: 10px; padding: 1px 7px; font-size: 10px; font-weight: 700;
+    min-width: 18px; text-align: center;
+  }
+  .header-info-btn {
+    display: flex; align-items: center; gap: 5px;
+    padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 600;
+    background: rgba(142,68,173,0.15); color: #bb8fce;
+    border: 1px solid rgba(142,68,173,0.3); cursor: pointer;
+    transition: all 0.15s; white-space: nowrap;
+  }
+  .header-info-btn:hover { background: rgba(142,68,173,0.25); border-color: #bb8fce; }
+
+  .clue-taken-notice {
+    background: rgba(231,76,60,0.12);
+    border: 1px solid rgba(231,76,60,0.35);
+    border-left: 3px solid var(--accent-red);
+    border-radius: 10px;
+    padding: 14px 16px;
+    margin-bottom: 8px;
+    font-size: 13px;
+    color: var(--text-primary);
+    line-height: 1.6;
+    animation: clueLimitSlideIn 0.3s ease;
+  }
+  .clue-taken-notice .notice-title {
+    font-weight: 700;
+    color: var(--accent-red);
+    display: flex; align-items: center; gap: 6px;
+    margin-bottom: 6px;
+  }
+  .clue-taken-notice .notice-body {
+    color: var(--text-secondary);
+    font-size: 12px;
+  }
+  .clue-taken-notice .notice-hint {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 6px;
+  }
+  .game-body {
+    flex: 1 1 0; display: flex; overflow: hidden; min-height: 0; min-width: 0;
+  }
+
+  /* --- Left: Main Area --- */
+  .game-main {
+    flex: 1 1 0; display: flex; flex-direction: column; overflow: hidden; min-height: 0;
+    min-width: 0; position: relative;
+  }
+  .game-content {
+    flex: 1 1 0; min-height: 0; overflow-y: auto; padding: 16px;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .game-content::-webkit-scrollbar { display: none; }
+
+  /* Custom scrollbar slider for game content */
+  .game-scroll-track {
+    position: absolute; top: 0; right: 0; bottom: 0; width: 12px;
+    z-index: 10; pointer-events: none;
+  }
+  .game-scroll-thumb {
+    position: absolute; right: 3px; width: 6px;
+    background: var(--accent-gold); border-radius: 3px;
+    opacity: 0.5; transition: opacity 0.3s, width 0.2s, right 0.2s;
+    pointer-events: auto; cursor: pointer;
+    min-height: 30px;
+  }
+  .game-scroll-track:hover .game-scroll-thumb { opacity: 0.8; right: 2px; width: 8px; }
+  .game-scroll-thumb.dragging { opacity: 1; right: 2px; width: 8px; }
+  .game-scroll-thumb:hover { background: #e8b820; opacity: 1; }
+
+  /* --- Right: Sidebar --- */
+  .game-sidebar {
+    width: 340px; flex-shrink: 0; display: flex; flex-direction: column;
+    border-left: 1px solid var(--border); background: var(--bg-secondary);
+    overflow: hidden;
+  }
+  .sidebar-tabs {
+    display: flex; border-bottom: 1px solid var(--border); flex-shrink: 0;
+  }
+  .sidebar-tab {
+    flex: 1; padding: 10px; text-align: center; font-size: 13px;
+    background: transparent; border: none; color: var(--text-dim);
+    cursor: pointer; transition: all 0.2s; border-bottom: 2px solid transparent;
+  }
+  .sidebar-tab.active { color: var(--accent-gold); border-bottom-color: var(--accent-gold); }
+  .sidebar-tab:hover { color: var(--text-secondary); }
+  .sidebar-panel { display: none; flex: 1; flex-direction: column; overflow: hidden; }
+  .sidebar-panel.active { display: flex; }
+
+  /* Chat */
+  .chat-messages {
+    flex: 1; overflow-y: auto; padding: 12px;
+    display: flex; flex-direction: column; gap: 8px;
+    scrollbar-width: thin; scrollbar-color: var(--border) transparent;
+  }
+  .chat-msg {
+    padding: 8px 12px; border-radius: var(--radius);
+    background: var(--bg-card); font-size: 13px; line-height: 1.5;
+    animation: fadeIn 0.3s;
+  }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  .chat-msg .sender { font-weight: 700; margin-right: 6px; }
+  .chat-msg.system {
+    background: rgba(212,160,23,0.1); color: var(--accent-gold);
+    font-style: italic; text-align: center; font-size: 12px;
+  }
+  .chat-msg.dm-msg {
+    background: linear-gradient(135deg, rgba(212,160,23,0.12), rgba(139,0,0,0.08));
+    border-left: 3px solid var(--accent-gold);
+    font-size: 13px;
+  }
+  .chat-msg.dm-msg .sender { color: var(--accent-gold); font-size: 14px; }
+  .chat-msg.dm-msg .dm-label {
+    display: inline-block; font-size: 10px; background: rgba(212,160,23,0.2);
+    color: var(--accent-gold); padding: 1px 8px; border-radius: 10px; margin-right: 6px;
+    letter-spacing: 1px;
+  }
+  .chat-msg.clue-shared {
+    background: rgba(39,174,96,0.1); border-left: 3px solid var(--accent-green);
+  }
+  .chat-msg.clue-shared .clue-title { font-weight: 700; color: var(--accent-green); margin-bottom: 4px; }
+  .chat-msg.clue-shared.clickable { cursor: pointer; transition: background 0.2s, transform 0.15s; }
+  .chat-msg.clue-shared.clickable:hover { background: rgba(39,174,96,0.22); transform: translateX(2px); }
+  .chat-msg.clue-shared .clue-click-hint { font-size: 11px; color: var(--text-secondary); margin-top: 6px; font-style: italic; opacity: 0.7; }
+  .chat-msg.private-msg {
+    background: rgba(142,68,173,0.1); border-left: 3px solid var(--accent-purple);
+  }
+  .chat-input-area {
+    padding: 12px; border-top: 1px solid var(--border);
+    display: flex; gap: 8px; flex-shrink: 0;
+  }
+  .chat-input-area input {
+    flex: 1; padding: 10px 14px; background: var(--bg-card);
+    border: 1px solid var(--border); border-radius: var(--radius);
+    color: var(--text-primary); font-size: 14px; outline: none;
+  }
+  .chat-input-area input:focus { border-color: var(--accent-gold); }
+
+  /* Inventory */
+  .inventory-list {
+    flex: 1; overflow-y: auto; padding: 8px 12px;
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .clue-limit-notice {
+    background: rgba(231,76,60,0.12);
+    border: 1px solid rgba(231,76,60,0.4);
+    border-left: 3px solid var(--accent-red);
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin-bottom: 8px;
+    font-size: 13px;
+    color: var(--text-primary);
+    line-height: 1.6;
+    animation: clueLimitSlideIn 0.3s ease;
+  }
+  .clue-limit-notice .notice-title {
+    font-weight: 700;
+    color: var(--accent-red);
+    display: flex; align-items: center; gap: 6px;
+    margin-bottom: 4px;
+  }
+  .clue-limit-notice .notice-hint {
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+  @keyframes clueLimitSlideIn {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .clue-category {
+    margin-bottom: 6px;
+  }
+  .clue-category-header {
+    font-size: 13px; font-weight: 700; letter-spacing: 1px;
+    padding: 8px 10px; border-radius: var(--radius); margin-bottom: 6px;
+    display: flex; align-items: center; gap: 6px;
+    cursor: pointer; user-select: none; transition: filter 0.15s;
+  }
+  .clue-category-header:hover { filter: brightness(1.15); }
+  .clue-category-header .collapse-icon {
+    font-size: 10px; margin-left: auto; opacity: 0.7; transition: transform 0.2s;
+  }
+  .clue-category-header.collapsed .collapse-icon { transform: rotate(-90deg); }
+  .clue-category-header.personal {
+    background: rgba(212,160,23,0.12); color: var(--accent-gold);
+    border-left: 3px solid var(--accent-gold);
+  }
+  .clue-category-header.public {
+    background: rgba(39,174,96,0.12); color: var(--accent-green);
+    border-left: 3px solid var(--accent-green);
+  }
+  .clue-category-content {
+    overflow: hidden; transition: max-height 0.25s ease, opacity 0.2s ease;
+  }
+  .clue-category-content.collapsed {
+    max-height: 0; opacity: 0; margin: 0;
+  }
+  .clue-act-label {
+    font-size: 11px; font-weight: 600; color: var(--text-dim);
+    padding: 4px 8px; margin: 4px 0 2px; letter-spacing: 1px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer; user-select: none; display: flex; align-items: center; gap: 4px;
+    transition: color 0.15s;
+  }
+  .clue-act-label:hover { color: var(--text-primary); }
+  .clue-act-label .collapse-icon {
+    font-size: 9px; margin-left: auto; opacity: 0.6; transition: transform 0.2s;
+  }
+  .clue-act-label.collapsed .collapse-icon { transform: rotate(-90deg); }
+  .clue-act-group {
+    overflow: hidden; transition: max-height 0.25s ease, opacity 0.2s ease;
+  }
+  .clue-act-group.collapsed {
+    max-height: 0; opacity: 0;
+  }
+  .clue-act-label .act-num { color: var(--accent-blue); font-weight: 700; }
+  .inventory-item {
+    padding: 12px; background: var(--bg-card); border-radius: var(--radius);
+    border: 1px solid var(--border); cursor: pointer; transition: all 0.2s;
+  }
+  .inventory-item:hover { border-color: var(--accent-gold); background: var(--bg-card-hover); }
+  .inventory-item.public-clue { border-left: 3px solid var(--accent-green); }
+  .inventory-item.personal-clue { border-left: 3px solid var(--accent-gold); }
+  .inventory-item .item-name { font-weight: 700; font-size: 14px; margin-bottom: 4px; color: var(--accent-gold); }
+  .inventory-item.public-clue .item-name { color: var(--accent-green); }
+  .inventory-item .item-desc { font-size: 12px; color: var(--text-secondary); line-height: 1.5; }
+  .inventory-item .item-clue {
+    margin-top: 8px; padding: 8px; background: rgba(39,174,96,0.1);
+    border-radius: 4px; font-size: 12px; color: var(--accent-green);
+  }
+  .inventory-item .item-badge {
+    display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 8px;
+    margin-left: 6px; vertical-align: middle;
+  }
+  .inventory-item .item-badge.act-badge {
+    background: rgba(41,128,185,0.2); color: var(--accent-blue);
+  }
+  .empty-inventory {
+    text-align: center; padding: 40px; color: var(--text-dim); font-size: 14px;
+  }
+  .clue-empty-section {
+    font-size: 12px; color: var(--text-dim); padding: 6px 10px; font-style: italic;
+  }
+
+  /* Players panel */
+  .players-list {
+    flex: 1; overflow-y: auto; padding: 12px;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .player-card {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px; background: var(--bg-card); border-radius: var(--radius);
+    border: 1px solid var(--border);
+  }
+  .player-card .p-avatar { font-size: 28px; }
+  .player-card .p-info { flex: 1; }
+  .player-card .p-name { font-weight: 700; font-size: 14px; }
+  .player-card .p-title { font-size: 11px; color: var(--text-dim); }
+  .player-card .p-actions { display: flex; gap: 4px; flex-direction: column; align-items: flex-end; }
+
+  /* ========== STORY OVERLAY ========== */
+  .story-overlay {
+    display: none; position: fixed; inset: 0; z-index: 100;
+    background: rgba(0,0,0,0.95);
+    flex-direction: column; align-items: center; justify-content: center;
+    padding: 40px;
+  }
+  .story-overlay.active { display: flex; }
+  .story-content {
+    max-width: 700px; width: 100%; text-align: center;
+  }
+  .story-content h2 {
+    font-size: 28px; color: var(--accent-red); margin-bottom: 24px;
+    letter-spacing: 4px;
+  }
+  .story-content p {
+    font-size: 16px; line-height: 2; color: var(--text-secondary);
+    white-space: pre-wrap;
+  }
+
+  /* ========== CHARACTER CARD ========== */
+  .character-overlay {
+    display: none; position: fixed; inset: 0; z-index: 100;
+    background: rgba(0,0,0,0.95);
+    flex-direction: column; align-items: center; justify-content: center;
+    padding: 20px; overflow-y: auto;
+  }
+  .character-overlay.active { display: flex; }
+  .character-card {
+    max-width: 600px; width: 100%;
+    background: var(--bg-card); border-radius: var(--radius-lg);
+    padding: 32px; border: 1px solid var(--border);
+    box-shadow: var(--shadow);
+  }
+  .character-card .char-header { text-align: center; margin-bottom: 24px; }
+  .character-card .char-avatar { font-size: 56px; margin-bottom: 12px; }
+  .character-card .char-name { font-size: 28px; font-weight: 800; }
+  .character-card .char-title { font-size: 14px; color: var(--text-dim); margin-top: 4px; }
+  .character-card .char-section {
+    margin-bottom: 20px; padding: 16px; background: var(--bg-secondary);
+    border-radius: var(--radius); border-left: 3px solid;
+  }
+  .character-card .char-section h3 { font-size: 13px; letter-spacing: 2px; margin-bottom: 8px; }
+  .character-card .char-section p { font-size: 14px; line-height: 1.8; color: var(--text-secondary); }
+  .section-backstory { border-color: var(--accent-blue); }
+  .section-backstory h3 { color: var(--accent-blue); }
+  .section-secret { border-color: var(--accent-red); }
+  .section-secret h3 { color: var(--accent-red); }
+  .section-goal { border-color: var(--accent-green); }
+  .section-goal h3 { color: var(--accent-green); }
+
+  /* ========== ROOM EXPLORATION ========== */
+  .room-view { display: flex; flex-direction: column; gap: 16px; }
+  .room-title-bar {
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .room-title-bar h2 { font-size: 22px; color: var(--accent-gold); }
+  .room-desc {
+    font-size: 14px; line-height: 1.8; color: var(--text-secondary);
+    padding: 16px; background: var(--bg-card); border-radius: var(--radius);
+    border-left: 3px solid var(--accent-purple);
+  }
+  .room-players {
+    display: flex; gap: 8px; flex-wrap: wrap; font-size: 13px;
+  }
+  .room-player-tag {
+    padding: 4px 10px; background: var(--bg-card); border-radius: 20px;
+    border: 1px solid var(--border);
+  }
+  .room-items-title { font-size: 14px; color: var(--text-dim); margin-bottom: -8px; }
+  .room-item-btn {
+    display: flex; align-items: center; gap: 12px; width: 100%;
+    padding: 14px 16px; background: var(--bg-card);
+    border: 1px solid var(--border); border-radius: var(--radius);
+    color: var(--text-primary); font-size: 14px; cursor: pointer;
+    transition: all 0.2s; text-align: left;
+  }
+  .room-item-btn:hover { border-color: var(--accent-gold); background: var(--bg-card-hover); }
+  .room-item-btn .item-icon { font-size: 20px; }
+  .room-item-btn .item-label { font-weight: 600; }
+  .room-item-btn .item-hint { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+  .room-item-btn.found { opacity: 0.4; pointer-events: none; }
+  .room-item-btn.claimed { opacity: 0.35; cursor: not-allowed; }
+  .room-item-btn.destroyed { opacity: 0.3; cursor: not-allowed; border-color: rgba(231,76,60,0.2); }
+  .room-item-btn.destroyed .item-label { color: var(--accent-red); }
+  .room-item-btn.corpse-btn { border-color: rgba(231,76,60,0.3); background: rgba(231,76,60,0.04); cursor: pointer; }
+  .room-item-btn.corpse-btn:hover { border-color: var(--accent-red); background: rgba(231,76,60,0.1); }
+  .room-item-btn.corpse-btn .item-label { color: var(--accent-red); }
+  .room-item-btn.found::after { content: '已获取'; margin-left: auto; color: var(--accent-green); font-size: 12px; }
+  .room-nav {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px;
+    margin-top: 8px;
+  }
+  .room-nav-btn {
+    padding: 10px; background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: var(--radius); color: var(--text-secondary);
+    font-size: 13px; cursor: pointer; transition: all 0.2s; text-align: center;
+  }
+  .room-nav-btn:hover { border-color: var(--accent-gold); color: var(--accent-gold); }
+  .room-nav-btn.current { border-color: var(--accent-blue); color: var(--accent-blue); opacity: 0.5; pointer-events: none; }
+
+  /* ========== BUILDING MAP ========== */
+  .map-btn {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    width: 100%; padding: 12px 16px;
+    background: linear-gradient(135deg, rgba(212,160,23,0.08), rgba(142,68,173,0.08));
+    border: 1px solid var(--border); border-radius: var(--radius);
+    color: var(--text-secondary); font-size: 14px; cursor: pointer;
+    transition: all 0.25s; text-align: center;
+  }
+  .map-btn:hover {
+    border-color: var(--accent-gold); color: var(--accent-gold);
+    background: linear-gradient(135deg, rgba(212,160,23,0.15), rgba(142,68,173,0.15));
+    transform: translateY(-1px);
+  }
+  .map-btn .map-btn-icon { font-size: 20px; }
+  .map-btn .map-btn-current {
+    font-size: 11px; color: var(--accent-gold);
+    background: rgba(212,160,23,0.15); padding: 2px 8px; border-radius: 10px;
+  }
+  .building-map {
+    text-align: center;
+  }
+  .building-map-title {
+    font-size: 16px; color: var(--accent-gold);
+    letter-spacing: 2px; margin-bottom: 4px;
+  }
+  .building-map-subtitle {
+    font-size: 12px; color: var(--text-dim); margin-bottom: 20px;
+  }
+  .map-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .map-room {
+    padding: 18px 8px; background: var(--bg-secondary);
+    border: 1px solid var(--border); border-radius: var(--radius);
+    text-align: center; font-size: 13px; color: var(--text-secondary);
+    transition: all 0.25s; position: relative;
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+  }
+  .map-room .map-icon { font-size: 28px; }
+  .map-room .map-name { font-size: 12px; line-height: 1.3; }
+  .map-room.current {
+    background: rgba(212,160,23,0.15); border-color: var(--accent-gold);
+    color: var(--accent-gold); box-shadow: 0 0 20px var(--accent-gold-glow);
+    transform: scale(1.06);
+  }
+  .map-room.current::before {
+    content: '📍'; position: absolute; top: -10px; right: -6px; font-size: 18px;
+    animation: mapPulse 1.5s ease-in-out infinite;
+  }
+  @keyframes mapPulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.3); }
+  }
+  .map-room.locked {
+    opacity: 0.25; border-style: dashed; border-color: var(--text-dim);
+  }
+  .map-room.locked .map-icon { filter: grayscale(1); }
+  .map-room.secret {
+    border-style: dashed; border-color: var(--accent-purple);
+  }
+  .map-room.secret.current {
+    opacity: 1; border-color: var(--accent-gold); color: var(--accent-gold);
+    box-shadow: 0 0 20px var(--accent-gold-glow);
+  }
+  .map-empty { background: transparent; border: none; }
+
+  /* ========== PUZZLE MODAL ========== */
+  .modal-overlay {
+    display: none; position: fixed; inset: 0; z-index: 200;
+    background: rgba(0,0,0,0.9);
+    flex-direction: column; align-items: center; justify-content: center;
+    padding: 20px;
+  }
+  .modal-overlay.active { display: flex; }
+  .modal {
+    background: var(--bg-card); border-radius: var(--radius-lg);
+    padding: 32px; max-width: 480px; width: 100%;
+    border: 1px solid var(--border); box-shadow: var(--shadow);
+  }
+  .modal h3 { font-size: 20px; color: var(--accent-gold); margin-bottom: 12px; }
+  .modal p { font-size: 14px; color: var(--text-secondary); line-height: 1.6; margin-bottom: 16px; }
+  .modal .modal-actions { display: flex; gap: 8px; margin-top: 16px; }
+
+  /* ========== VOTE SCREEN ========== */
+  .vote-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px;
+    margin-top: 16px;
+  }
+  .vote-card {
+    padding: 16px; background: var(--bg-card); border: 2px solid var(--border);
+    border-radius: var(--radius-lg); text-align: center; cursor: pointer;
+    transition: all 0.2s;
+  }
+  .vote-card:hover { border-color: var(--accent-red); background: var(--bg-card-hover); }
+  .vote-card.voted { border-color: var(--accent-red); background: rgba(192,57,43,0.1); }
+  .vote-card .v-avatar { font-size: 36px; margin-bottom: 8px; }
+  .vote-card .v-name { font-weight: 700; font-size: 14px; }
+  .vote-card .v-votes { font-size: 12px; color: var(--accent-red); margin-top: 4px; }
+
+  /* ========== RESULTS ========== */
+  .results-overlay {
+    display: none; position: fixed; inset: 0; z-index: 300;
+    background: rgba(0,0,0,0.97);
+    flex-direction: column; align-items: center; justify-content: center;
+    padding: 20px; overflow-y: auto;
+  }
+  .results-overlay.active { display: flex; }
+  .results-container { max-width: 700px; width: 100%; }
+  .results-title {
+    text-align: center; font-size: 32px; font-weight: 800;
+    margin-bottom: 24px; letter-spacing: 4px;
+  }
+  .results-title.win { color: var(--accent-green); }
+  .results-title.lose { color: var(--accent-red); }
+  .vote-results {
+    background: var(--bg-card); border-radius: var(--radius-lg);
+    padding: 24px; margin-bottom: 20px;
+  }
+  .vote-result-bar {
+    display: flex; align-items: center; gap: 12px; margin-bottom: 12px;
+  }
+  .vote-result-bar .vr-name { width: 80px; font-weight: 700; font-size: 14px; text-align: right; }
+  .vote-result-bar .vr-bar {
+    flex: 1; height: 32px; background: var(--bg-secondary);
+    border-radius: 4px; overflow: hidden; position: relative;
+  }
+  .vote-result-bar .vr-fill {
+    height: 100%; background: linear-gradient(90deg, var(--accent-red), #e74c3c);
+    border-radius: 4px; transition: width 1s ease;
+    display: flex; align-items: center; padding-left: 8px;
+    font-size: 12px; font-weight: 700;
+  }
+  .murderer-reveal {
+    background: var(--bg-card); border: 2px solid var(--accent-red);
+    border-radius: var(--radius-lg); padding: 24px; text-align: center;
+    margin-bottom: 20px;
+  }
+  .murderer-reveal .mr-avatar { font-size: 48px; margin-bottom: 12px; }
+  .murderer-reveal .mr-name { font-size: 24px; font-weight: 800; color: var(--accent-red); }
+  .murderer-reveal .mr-label { font-size: 14px; color: var(--text-dim); margin-top: 4px; }
+  .role-reveal-grid {
+    display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px;
+    margin-bottom: 20px;
+  }
+  .role-reveal-card {
+    padding: 12px; background: var(--bg-card); border-radius: var(--radius);
+    border: 1px solid var(--border); font-size: 13px;
+  }
+  .role-reveal-card .rr-name { font-weight: 700; }
+  .role-reveal-card .rr-role { color: var(--text-dim); font-size: 12px; }
+
+  /* ========== NOTEPAD MODAL ========== */
+  .notepad-overlay {
+    position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+    background: rgba(0,0,0,0.6); z-index: 500;
+    display: none; align-items: center; justify-content: center;
+  }
+  .notepad-overlay.show { display: flex; }
+  .notepad-modal {
+    width: 480px; max-width: 90vw; max-height: 70vh;
+    background: var(--bg-secondary); border: 1px solid var(--border);
+    border-radius: 14px; box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    display: flex; flex-direction: column; overflow: hidden;
+    transform: scale(0.95); transition: transform 0.2s;
+  }
+  .notepad-overlay.show .notepad-modal { transform: scale(1); }
+  .notepad-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 18px; border-bottom: 1px solid var(--border);
+    background: rgba(212,160,23,0.08);
+  }
+  .notepad-header-title {
+    font-size: 15px; font-weight: 700; color: var(--accent-gold);
+    display: flex; align-items: center; gap: 6px;
+  }
+  .notepad-header-hint {
+    font-size: 11px; color: var(--text-dim); margin-top: 2px;
+  }
+  .notepad-close {
+    width: 28px; height: 28px; border-radius: 8px;
+    background: transparent; border: 1px solid var(--border);
+    color: var(--text-secondary); cursor: pointer; font-size: 14px;
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.15s;
+  }
+  .notepad-close:hover { background: var(--bg-card-hover); color: var(--text-primary); }
+  .notepad-body {
+    flex: 1; overflow-y: auto; padding: 14px 18px;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .notepad-empty {
+    text-align: center; color: var(--text-dim); font-size: 13px;
+    padding: 30px 0; line-height: 1.8;
+  }
+  .notepad-note {
+    display: flex; gap: 8px; align-items: flex-start;
+    padding: 10px 12px; background: var(--bg-card);
+    border: 1px solid var(--border); border-radius: 10px;
+    transition: border-color 0.15s;
+    animation: noteSlideIn 0.25s ease;
+  }
+  .notepad-note:hover { border-color: var(--accent-gold); }
+  @keyframes noteSlideIn {
+    from { opacity: 0; transform: translateY(-8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .notepad-note-text {
+    flex: 1; font-size: 13px; color: var(--text-primary);
+    line-height: 1.6; word-break: break-word; white-space: pre-wrap;
+  }
+  .notepad-note-time {
+    font-size: 10px; color: var(--text-dim); margin-top: 4px;
+  }
+  .notepad-note-del {
+    width: 24px; height: 24px; border-radius: 6px; flex-shrink: 0;
+    background: transparent; border: none; color: var(--text-dim);
+    cursor: pointer; font-size: 13px; transition: all 0.15s;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .notepad-note-del:hover { background: rgba(231,76,60,0.15); color: var(--accent-red); }
+  .notepad-input-row {
+    display: flex; gap: 8px; padding: 12px 18px;
+    border-top: 1px solid var(--border); background: var(--bg-primary);
+  }
+  .notepad-input {
+    flex: 1; padding: 9px 12px; border-radius: 8px;
+    background: var(--bg-card); border: 1px solid var(--border);
+    color: var(--text-primary); font-size: 13px; font-family: inherit;
+    resize: vertical; min-height: 38px; max-height: 100px;
+    transition: border-color 0.15s;
+  }
+  .notepad-input:focus { outline: none; border-color: var(--accent-gold); }
+  .notepad-input::placeholder { color: var(--text-dim); }
+  .notepad-add-btn {
+    padding: 0 16px; border-radius: 8px; border: none;
+    background: var(--accent-gold); color: var(--bg-primary);
+    font-size: 13px; font-weight: 700; cursor: pointer;
+    transition: all 0.15s; white-space: nowrap;
+    display: flex; align-items: center; gap: 4px;
+  }
+  .notepad-add-btn:hover { filter: brightness(1.1); }
+  .notepad-add-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .notepad-clear-all {
+    font-size: 11px; color: var(--text-dim); cursor: pointer;
+    padding: 4px 8px; border-radius: 6px; transition: all 0.15s;
+    background: transparent; border: none;
+  }
+  .notepad-clear-all:hover { color: var(--accent-red); background: rgba(231,76,60,0.08); }
+
+  /* ========== SHARE CLUE MODAL ========== */
+  .share-options {
+    display: flex; flex-direction: column; gap: 8px; margin-top: 12px;
+  }
+  .share-option {
+    padding: 10px 16px; background: var(--bg-secondary);
+    border: 1px solid var(--border); border-radius: var(--radius);
+    color: var(--text-primary); font-size: 13px; cursor: pointer;
+    transition: all 0.2s; text-align: left;
+  }
+  .share-option:hover { border-color: var(--accent-gold); }
+
+  /* ========== RESPONSIVE ========== */
+  @media (max-width: 900px) {
+    .game-body { flex-direction: column; }
+    .game-sidebar { width: 100%; height: 40%; border-left: none; border-top: 1px solid var(--border); }
+    .role-reveal-grid { grid-template-columns: 1fr; }
+    .waiting-players { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 600px) {
+    .lobby-title { font-size: 28px; }
+    .lobby-box { padding: 20px; }
+    .waiting-players { grid-template-columns: 1fr; }
+    .vote-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+
+  /* scrollbar */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  /* typing indicator */
+  .typing-dots::after {
+    content: ''; animation: dots 1.5s infinite;
+  }
+  @keyframes dots {
+    0% { content: ''; } 25% { content: '.'; } 50% { content: '..'; } 75% { content: '...'; }
+  }
+
+  /* ========== SETTINGS BUTTON (inline in header) ========== */
+  .settings-btn-inline {
+    width: 32px; height: 32px; border-radius: 50%;
+    background: var(--bg-card); border: 1px solid var(--border);
+    color: var(--text-secondary); font-size: 16px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.3s; flex-shrink: 0;
+  }
+  .settings-btn-inline:hover { color: var(--accent-gold); border-color: var(--accent-gold); transform: rotate(45deg); }
+
+  /* ========== PERSONAL TASK BUTTON ========== */
+  .task-btn-flow {
+    padding: 5px 14px; border-radius: 14px;
+    background: rgba(10,10,15,0.6);
+    border: 1px solid rgba(212,160,23,0.4);
+    color: var(--accent-gold); font-size: 12px; font-weight: 600;
+    cursor: pointer; transition: all 0.3s;
+    display: inline-flex; align-items: center; gap: 5px;
+    line-height: 1;
+  }
+  .settings-btn-inline:hover { background: rgba(212,160,23,0.12); border-color: var(--accent-gold); }
+  .btn-leave-game {
+    padding: 4px 12px; border-radius: 14px;
+    background: transparent; border: 1px solid rgba(192,57,43,0.4);
+    color: var(--accent-red); font-size: 12px; font-weight: 600;
+    cursor: pointer; transition: all 0.3s; flex-shrink: 0;
+  }
+  .btn-leave-game:hover { background: rgba(192,57,43,0.15); border-color: var(--accent-red); }
+  .task-btn-flow .task-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-gold); animation: taskPulse 2s ease-in-out infinite; flex-shrink: 0; }
+  @keyframes taskPulse { 0%,100% { opacity: 0.4; } 50% { opacity: 1; } }
+
+  .task-modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 600;
+    display: flex; align-items: center; justify-content: center;
+    opacity: 0; pointer-events: none; transition: opacity 0.3s;
+  }
+  .task-modal-overlay.active { opacity: 1; pointer-events: auto; }
+  .task-modal {
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg);
+    padding: 28px; max-width: 420px; width: 90%; max-height: 80vh; overflow-y: auto;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+  }
+  .task-modal h3 { color: var(--accent-gold); margin: 0 0 16px; font-size: 18px; }
+  .task-item {
+    padding: 12px; margin-bottom: 8px; border-radius: var(--radius);
+    border-left: 3px solid var(--accent-gold);
+    background: rgba(212,160,23,0.05);
+  }
+  .task-item .task-label { font-size: 11px; color: var(--text-dim); margin-bottom: 4px; }
+  .task-item .task-text { font-size: 14px; color: var(--text-primary); line-height: 1.5; }
+  .task-modal .close-task { margin-top: 16px; width: 100%; }
+
+  /* ========== SETTINGS OVERLAY ========== */
+  .settings-overlay {
+    display: none; position: fixed; inset: 0; z-index: 350;
+    background: rgba(0,0,0,0.92);
+    flex-direction: column; align-items: center; justify-content: center;
+    padding: 20px;
+  }
+  .settings-overlay.active { display: flex; }
+  .settings-panel {
+    background: var(--bg-card); border-radius: var(--radius-lg);
+    padding: 36px; max-width: 440px; width: 100%;
+    border: 1px solid var(--border); box-shadow: var(--shadow);
+    animation: fadeIn 0.3s;
+  }
+  .settings-panel h2 {
+    font-size: 22px; color: var(--accent-gold); margin-bottom: 28px;
+    text-align: center; letter-spacing: 2px;
+  }
+  .settings-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 0; border-bottom: 1px solid var(--border);
+  }
+  .settings-row:last-child { border-bottom: none; }
+  .settings-label {
+    display: flex; align-items: center; gap: 12px;
+  }
+  .settings-label .s-icon { font-size: 24px; }
+  .settings-label .s-text { font-size: 15px; font-weight: 600; }
+  .settings-label .s-hint { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+  .toggle-switch {
+    position: relative; width: 52px; height: 28px; flex-shrink: 0;
+  }
+  .toggle-switch input { opacity: 0; width: 0; height: 0; }
+  .toggle-slider {
+    position: absolute; inset: 0; background: var(--bg-secondary);
+    border-radius: 28px; border: 1px solid var(--border);
+    cursor: pointer; transition: all 0.3s;
+  }
+  .toggle-slider::before {
+    content: ''; position: absolute; left: 3px; top: 3px;
+    width: 20px; height: 20px; border-radius: 50%;
+    background: var(--text-dim); transition: all 0.3s;
+  }
+  .toggle-switch input:checked + .toggle-slider { border-color: var(--accent-gold); background: rgba(212,160,23,0.15); }
+  .toggle-switch input:checked + .toggle-slider::before {
+    background: var(--accent-gold); transform: translateX(24px);
+  }
+  .volume-slider {
+    width: 100px; height: 4px; -webkit-appearance: none;
+    background: var(--bg-secondary); border-radius: 2px; outline: none;
+    flex-shrink: 0;
+  }
+  .volume-slider::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%;
+    background: var(--accent-gold); cursor: pointer; border: 2px solid var(--bg-card);
+  }
+
+  /* ========== INTERACTION EFFECTS ========== */
+  /* Room transition: content slide */
+  .room-slide-in { animation: roomSlideIn 0.35s ease-out; }
+  @keyframes roomSlideIn {
+    0% { opacity: 0; transform: translateY(12px); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Clue discovery sparkle particles */
+  .sparkle-container {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    pointer-events: none; z-index: 999;
+  }
+  .sparkle {
+    position: absolute; width: 6px; height: 6px; border-radius: 50%;
+    background: var(--accent-gold);
+    animation: sparkleBurst 0.8s ease-out forwards;
+  }
+  @keyframes sparkleBurst {
+    0% { opacity: 1; transform: translate(0,0) scale(1); }
+    100% { opacity: 0; transform: translate(var(--sx),var(--sy)) scale(0); }
+  }
+
+  /* Clue card pop-in */
+  .clue-pop {
+    animation: cluePopIn 0.4s cubic-bezier(0.34,1.56,0.64,1);
+  }
+  @keyframes cluePopIn {
+    0% { opacity: 0; transform: scale(0.8); }
+    100% { opacity: 1; transform: scale(1); }
+  }
+
+  /* Chat message highlight flash */
+  .chat-msg-highlight {
+    animation: msgFlash 0.6s ease-out;
+  }
+  @keyframes msgFlash {
+    0% { box-shadow: 0 0 0 0 rgba(212,160,23,0.4); }
+    100% { box-shadow: 0 0 0 12px rgba(212,160,23,0); }
+  }
+
+  /* Puzzle solve glow */
+  .puzzle-solve-glow {
+    animation: solveGlow 1s ease-out;
+  }
+  @keyframes solveGlow {
+    0% { box-shadow: 0 0 0 0 rgba(39,174,96,0.6); transform: scale(1.02); }
+    100% { box-shadow: 0 0 0 30px rgba(39,174,96,0); transform: scale(1); }
+  }
+
+  /* Room item hover pulse */
+  .room-item-btn:not(.found) { position: relative; }
+  .room-item-btn:not(.found):hover::after {
+    content: ''; position: absolute; inset: -2px; border-radius: var(--radius);
+    border: 1px solid rgba(212,160,23,0.4);
+    animation: pulseBorder 1.5s ease-in-out infinite; pointer-events: none;
+  }
+  @keyframes pulseBorder {
+    0%,100% { opacity: 0.3; }
+    50% { opacity: 1; }
+  }
+
+  /* Phase transition banner */
+  .phase-banner {
+    position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    pointer-events: none; z-index: 500;
+    font-size: 36px; font-weight: 800; letter-spacing: 6px;
+    padding: 16px 40px; border-radius: 12px;
+    background: rgba(10,10,15,0.75);
+    animation: phaseBannerAnim 2.5s ease-out forwards;
+    text-shadow: 0 0 40px currentColor;
+    white-space: nowrap;
+  }
+  @keyframes phaseBannerAnim {
+    0% { opacity: 0; transform: translate(-50%,-50%) scale(0.5); }
+    15% { opacity: 1; transform: translate(-50%,-50%) scale(1.1); }
+    30% { transform: translate(-50%,-50%) scale(1); }
+    100% { opacity: 0; transform: translate(-50%,-50%) scale(0.9); }
+  }
+
+  /* DM time limit countdown */
+  .dm-time-limit {
+    position: fixed; top: 60px; left: 50%; transform: translateX(-50%);
+    z-index: 450; display: flex; align-items: center; gap: 10px;
+    padding: 12px 24px; border-radius: 30px;
+    background: rgba(192,57,43,0.95); color: white;
+    font-size: 15px; font-weight: 700; box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+    animation: dmTimeSlideIn 0.4s ease;
+  }
+  .dm-time-limit .timer-icon { font-size: 18px; }
+  .dm-time-limit .timer-num {
+    font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums;
+    min-width: 36px; text-align: center;
+  }
+  .dm-time-limit .timer-label { font-size: 13px; opacity: 0.9; }
+  .dm-time-limit.urgent {
+    animation: dmTimePulse 0.8s ease-in-out infinite;
+    background: rgba(231,76,60,1);
+  }
+  @keyframes dmTimeSlideIn {
+    from { opacity: 0; transform: translateX(-50%) translateY(-20px); }
+    to { opacity: 1; transform: translateX(-50%) translateY(0); }
+  }
+  @keyframes dmTimePulse {
+    0%, 100% { transform: translateX(-50%) scale(1); }
+    50% { transform: translateX(-50%) scale(1.05); }
+  }
+
+  /* Vote card pulse */
+  .vote-card { position: relative; overflow: hidden; }
+  .vote-card::after {
+    content: ''; position: absolute; top: -50%; left: -50%; width: 200%; height: 200%;
+    background: radial-gradient(circle, rgba(192,57,43,0.15), transparent 60%);
+    opacity: 0; transition: opacity 0.3s;
+  }
+  .vote-card:hover::after { opacity: 1; }
+
+  /* Item inspect ripple */
+  .ripple-effect {
+    position: absolute; border-radius: 50%;
+    background: rgba(212,160,23,0.2); transform: scale(0);
+    animation: rippleAnim 0.6s ease-out; pointer-events: none;
+  }
+  @keyframes rippleAnim {
+    to { transform: scale(4); opacity: 0; }
+  }
+
+  /* ========== BOTTOM PROGRESS BAR ========== */
+  .phase-progress-bar {
+    display: none; height: 36px; flex-shrink: 0;
+    background: var(--bg-secondary); border-top: 1px solid var(--border);
+    padding: 0 16px; align-items: center; gap: 12px;
+  }
+  .phase-progress-bar.active { display: flex; }
+  .phase-progress-label {
+    font-size: 13px; font-weight: 700; white-space: nowrap;
+    min-width: 72px; letter-spacing: 1px;
+  }
+  .phase-progress-label.explore { color: var(--accent-blue); }
+  .phase-progress-label.discuss { color: var(--accent-gold); }
+  .phase-progress-label.vote { color: var(--accent-red); }
+  .phase-progress-track {
+    flex: 1; height: 8px; background: var(--bg-primary);
+    border-radius: 4px; overflow: hidden; position: relative;
+  }
+  .phase-progress-fill {
+    height: 100%; border-radius: 4px;
+    transition: width 0.3s linear;
+  }
+  .phase-progress-fill.explore { background: linear-gradient(90deg, #2980b9, #1abc9c); }
+  .phase-progress-fill.discuss { background: linear-gradient(90deg, #d4a017, #f39c12); }
+  .phase-progress-fill.vote { background: linear-gradient(90deg, #c0392b, #e74c3c); }
+  .phase-progress-fill.urgent { animation: progressPulse 0.5s ease-in-out infinite; }
+  @keyframes progressPulse {
+    0%,100% { filter: brightness(1); }
+    50% { filter: brightness(1.5); }
+  }
+  .phase-progress-time {
+    font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums;
+    min-width: 48px; text-align: right; color: var(--text-primary);
+  }
+
+  /* ========== SCENE BANNER ========== */
+  .room-scene-banner {
+    width: 100%; height: 180px; border-radius: var(--radius-lg);
+    overflow: hidden; position: relative; margin-bottom: 16px;
+    border: 1px solid var(--border);
+  }
+  .room-scene-banner img {
+    width: 100%; height: 100%; object-fit: cover;
+    filter: brightness(0.7) saturate(0.8);
+    transition: filter 0.5s;
+  }
+  .room-scene-banner:hover img {
+    filter: brightness(0.85) saturate(1);
+  }
+  .room-scene-banner .scene-overlay {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    padding: 24px 16px 12px;
+    background: linear-gradient(transparent, rgba(10,10,15,0.95));
+  }
+  .room-scene-banner .scene-overlay h2 {
+    font-size: 22px; color: #fff; text-shadow: 0 2px 8px rgba(0,0,0,0.8);
+    margin: 0;
+  }
+  .room-scene-banner .scene-overlay .scene-subtitle {
+    font-size: 12px; color: rgba(255,255,255,0.6); margin-top: 2px;
+  }
+
+  /* ========== CLUE IMAGE IN ITEMS ========== */
+  .room-item-btn { position: relative; gap: 14px; }
+  .room-item-btn .item-thumb {
+    width: 56px; height: 56px; border-radius: 6px; flex-shrink: 0;
+    overflow: hidden; border: 1px solid var(--border);
+  }
+  .room-item-btn .item-thumb img {
+    width: 100%; height: 100%; object-fit: cover;
+    filter: brightness(0.8) saturate(0.7);
+    transition: all 0.3s;
+  }
+  .room-item-btn:not(.found):hover .item-thumb img {
+    filter: brightness(1) saturate(1);
+    transform: scale(1.05);
+  }
+
+  /* ========== CLUE IMAGE IN MODAL ========== */
+  .clue-modal-image {
+    width: 100%; max-height: 200px; object-fit: cover;
+    border-radius: var(--radius); margin-bottom: 16px;
+    border: 1px solid var(--border);
+  }
+
+  /* ========== CLUE IMAGE IN INVENTORY ========== */
+  .inventory-item .item-thumb-sm {
+    width: 40px; height: 40px; border-radius: 4px; flex-shrink: 0;
+    overflow: hidden; margin-bottom: 8px; border: 1px solid var(--border);
+  }
+  .inventory-item .item-thumb-sm img {
+    width: 100%; height: 100%; object-fit: cover;
+  }
+
+  /* ========== CHARACTER AVATAR ========== */
+  .header-avatar {
+    width: 32px; height: 32px; border-radius: 50%; object-fit: cover;
+    border: 2px solid var(--accent-gold); flex-shrink: 0;
+    box-shadow: 0 0 8px rgba(212,160,23,0.3);
+  }
+  .player-avatar-img {
+    width: 40px; height: 40px; border-radius: 50%; object-fit: cover;
+    border: 2px solid var(--border); flex-shrink: 0;
+  }
+  .chat-avatar {
+    width: 24px; height: 24px; border-radius: 50%; object-fit: cover;
+    vertical-align: middle; margin-right: 6px; border: 1px solid var(--border);
+  }
+</style>
+</head>
+<body>
+
+<!-- Sparkle particle overlay -->
+<div class="sparkle-container" id="sparkleContainer"></div>
+
+<!-- ========== LOBBY ========== -->
+<div id="lobby" class="screen active">
+  <div class="lobby-title">密室剧本杀</div>
+  <div class="lobby-subtitle">LOCKED ROOM MYSTERY</div>
+  <div class="lobby-box">
+    <h2>进入游戏</h2>
+    <div class="input-group">
+      <label>你的昵称</label>
+      <input type="text" id="playerName" placeholder="输入一个昵称..." maxlength="10" autocomplete="off">
+    </div>
+    <div class="lobby-actions">
+      <button class="btn btn-red" onclick="createRoom()">创建房间</button>
+      <button class="btn btn-outline" onclick="toggleJoin()">加入房间</button>
+    </div>
+    <div style="margin-top: 16px; text-align: center;">
+      <button class="btn btn-gold btn-block" onclick="startSolo()" style="background: linear-gradient(135deg, #8e44ad, #6c3483); box-shadow: 0 4px 16px rgba(142,68,173,0.3);">
+        🎮 单人模式（无需组队，AI陪你玩）
+      </button>
+    </div>
+    <div id="joinSection" style="display:none; margin-top: 16px;">
+      <div class="input-group">
+        <label>房间代码</label>
+        <input type="text" id="roomCode" placeholder="输入6位房间代码..." maxlength="6" style="text-transform:uppercase; letter-spacing: 4px;" autocomplete="off">
+      </div>
+      <button class="btn btn-gold btn-block" onclick="joinRoom()">加入</button>
+    </div>
+    <div id="lobbyError" class="error-msg"></div>
+  </div>
+</div>
+
+<!-- ========== WAITING ROOM ========== -->
+<div id="waiting" class="screen">
+  <div class="waiting-header">
+    <h1>等待玩家加入</h1>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <button class="btn btn-outline btn-sm" onclick="leaveWaitingRoom()" title="返回大厅">离开房间</button>
+      <span id="roomCodeLabel" style="color: var(--accent-gold); font-weight: 700; letter-spacing: 4px; margin-right: 16px;"></span>
+      <button class="btn btn-red btn-sm" onclick="startGame()" id="startBtn">开始游戏</button>
+    </div>
+  </div>
+  <div class="waiting-body">
+    <div class="room-code-display">
+      <div class="label">房间代码（分享给朋友加入）</div>
+      <div class="code" id="roomCodeBig"></div>
+    </div>
+    <div class="waiting-players" id="waitingPlayers"></div>
+    <p style="color: var(--text-dim); font-size: 13px;">需要 4-6 名玩家才能开始</p>
+  </div>
+</div>
+
+<!-- ========== GAME SCREEN ========== -->
+<div id="game" class="screen">
+  <div class="game-header">
+    <div class="header-left">
+      <span class="phase-badge" id="phaseBadge">探索</span>
+      <span id="roundInfo" style="color:var(--text-dim);"></span>
+    </div>
+    <div class="header-center">
+      <div id="headerTimer" class="timer" style="display:none;"></div>
+      <button class="header-info-btn" onclick="openPrologueReview()" title="查看序幕">
+        📖 <span>序幕</span>
+      </button>
+      <button class="header-info-btn" onclick="openCharacterStory()" title="查看角色故事">
+        🎭 <span>角色</span>
+      </button>
+      <button class="notepad-btn" onclick="toggleNotepad()" title="记事板">
+        📝 <span>记事板</span>
+        <span class="notepad-badge" id="notepadBadge" style="display:none;">0</span>
+      </button>
+    </div>
+    <div class="header-right">
+      <button class="settings-btn-inline" onclick="openSettings()" title="设置">⚙️</button>
+      <span id="myAvatarImg" style="display:none;"></span>
+      <span id="myAvatar" style="font-size:20px;"></span>
+      <span id="myCharacter" style="color:var(--accent-gold);font-weight:600;"></span>
+    </div>
+  </div>
+  <div class="game-body">
+    <div class="game-main">
+      <div class="game-content" id="gameContent">
+        <!-- Dynamic content -->
+      </div>
+      <div class="game-scroll-track" id="gameScrollTrack">
+        <div class="game-scroll-thumb" id="gameScrollThumb"></div>
+      </div>
+      <div id="taskBar" style="padding:6px 12px;display:none;flex-shrink:0;">
+        <button class="task-btn-flow" onclick="openTaskModal()">
+          <span class="task-dot"></span> 我的任务
+        </button>
+      </div>
+      <div id="gameActions" style="padding:12px;border-top:1px solid var(--border);display:flex;gap:8px;flex-shrink:0;">
+      </div>
+    </div>
+    <div class="game-sidebar">
+      <div class="sidebar-tabs">
+        <button class="sidebar-tab active" onclick="switchTab('chat')">聊天</button>
+        <button class="sidebar-tab" onclick="switchTab('inventory')">线索</button>
+        <button class="sidebar-tab" onclick="switchTab('players')">玩家</button>
+      </div>
+      <div class="sidebar-panel active" id="panel-chat">
+        <div class="chat-messages" id="chatMessages"></div>
+        <div class="chat-input-area">
+          <input type="text" id="chatInput" placeholder="输入消息..." maxlength="200" autocomplete="off">
+          <button class="btn btn-gold btn-sm" onclick="sendChat()">发送</button>
+        </div>
+      </div>
+      <div class="sidebar-panel" id="panel-inventory">
+        <div class="inventory-list" id="inventoryList">
+          <div class="empty-inventory">尚未发现任何线索<br><br>探索房间来收集线索</div>
+        </div>
+      </div>
+      <div class="sidebar-panel" id="panel-players">
+        <div class="players-list" id="playersList"></div>
+      </div>
+    </div>
+  </div>
+  <!-- Phase progress bar -->
+  <div class="phase-progress-bar active" id="phaseProgressBar">
+    <span class="phase-progress-label explore" id="phaseProgressLabel">探索</span>
+    <div class="phase-progress-track">
+      <div class="phase-progress-fill explore" id="phaseProgressFill" style="width:100%"></div>
+    </div>
+    <span class="phase-progress-time" id="phaseProgressTime">--:--</span>
+  </div>
+</div>
+
+<!-- ========== STORY OVERLAY ========== -->
+<div class="story-overlay" id="storyOverlay">
+  <div class="story-content">
+    <h2 id="storyTitle"></h2>
+    <p id="storyText"></p>
+  </div>
+  <div id="storyAckInfo" style="text-align:center;margin-top:20px;color:var(--text-dim);font-size:13px;"></div>
+  <button class="btn btn-gold" style="margin-top:16px;" onclick="storyAck()" id="storyAckBtn">继续</button>
+</div>
+
+<!-- ========== CHARACTER OVERLAY ========== -->
+<div class="character-overlay" id="characterOverlay">
+  <div class="character-card" id="characterCard"></div>
+  <div id="charAckInfo" style="text-align:center;margin-top:12px;color:var(--text-dim);font-size:13px;"></div>
+  <button class="btn btn-red" style="margin-top:8px;" onclick="characterAck()" id="charAckBtn">我已了解我的角色</button>
+</div>
+
+<!-- ========== PUZZLE MODAL ========== -->
+<div class="modal-overlay" id="puzzleModal">
+  <div class="modal" id="puzzleContent"></div>
+</div>
+
+<!-- ========== SHARE MODAL ========== -->
+<div class="modal-overlay" id="shareModal">
+  <div class="modal" id="shareContent"></div>
+</div>
+
+<!-- ========== RESULTS OVERLAY ========== -->
+<div class="results-overlay" id="resultsOverlay">
+  <div class="results-container" id="resultsContainer"></div>
+</div>
+
+<!-- Task Modal -->
+<div class="task-modal-overlay" id="taskModalOverlay">
+  <div class="task-modal">
+    <h3>📋 个人任务</h3>
+    <div id="taskContent"></div>
+    <button class="btn btn-outline close-task" onclick="closeTaskModal()">关闭</button>
+  </div>
+</div>
+
+<!-- ========== NOTEPAD MODAL ========== -->
+<div class="notepad-overlay" id="notepadOverlay" onclick="if(event.target===this)closeNotepad()">
+  <div class="notepad-modal">
+    <div class="notepad-header">
+      <div>
+        <div class="notepad-header-title">📝 记事板</div>
+        <div class="notepad-header-hint">记录线索、推理和备忘信息</div>
+      </div>
+      <button class="notepad-close" onclick="closeNotepad()">✕</button>
+    </div>
+    <div class="notepad-body" id="notepadBody">
+      <div class="notepad-empty" id="notepadEmpty">
+        还没有任何笔记<br>在下方输入框中记录线索信息
+      </div>
+    </div>
+    <div class="notepad-input-row">
+      <textarea class="notepad-input" id="notepadInput" placeholder="输入笔记内容，回车快速添加..." rows="1" oninput="autoResizeNotepadInput(this)"></textarea>
+      <button class="notepad-add-btn" id="notepadAddBtn" onclick="addNotepadNote()">＋ 添加</button>
+    </div>
+  </div>
+</div>
+
+<!-- ========== PROLOGUE REVIEW MODAL ========== -->
+<div class="notepad-overlay" id="prologueOverlay" onclick="if(event.target===this)closePrologueReview()">
+  <div class="notepad-modal" style="max-width:600px;">
+    <div class="notepad-header">
+      <div>
+        <div class="notepad-header-title">📖 序幕回顾</div>
+        <div class="notepad-header-hint">暴风雨之夜的序幕故事</div>
+      </div>
+      <button class="notepad-close" onclick="closePrologueReview()">✕</button>
+    </div>
+    <div class="notepad-body" id="prologueBody" style="padding:20px;">
+    </div>
+  </div>
+</div>
+
+<!-- ========== CHARACTER STORY MODAL ========== -->
+<div class="notepad-overlay" id="characterStoryOverlay" onclick="if(event.target===this)closeCharacterStory()">
+  <div class="notepad-modal" style="max-width:600px;">
+    <div class="notepad-header">
+      <div>
+        <div class="notepad-header-title">🎭 角色故事</div>
+        <div class="notepad-header-hint">你的角色背景与秘密</div>
+      </div>
+      <button class="notepad-close" onclick="closeCharacterStory()">✕</button>
+    </div>
+    <div class="notepad-body" id="characterStoryBody" style="padding:20px;">
+    </div>
+  </div>
+</div>
+
+<!-- ========== SETTINGS OVERLAY ========== -->
+<div class="settings-overlay" id="settingsOverlay">
+  <div class="settings-panel">
+    <h2>⚙️ 游戏设置</h2>
+    <div class="settings-row">
+      <div class="settings-label">
+        <span class="s-icon">🎵</span>
+        <div>
+          <div class="s-text">背景音乐</div>
+          <div class="s-hint">沉浸式暗黑氛围音乐</div>
+        </div>
+      </div>
+      <label class="toggle-switch">
+        <input type="checkbox" id="bgmToggle" checked onchange="toggleBGM()">
+        <span class="toggle-slider"></span>
+      </label>
+    </div>
+    <div class="settings-row" id="bgmVolumeRow">
+      <div class="settings-label">
+        <span class="s-icon">🔊</span>
+        <div>
+          <div class="s-text">音乐音量</div>
+          <div class="s-hint" id="bgmVolLabel">50%</div>
+        </div>
+      </div>
+      <input type="range" class="volume-slider" id="bgmVolume" min="0" max="100" value="50" oninput="changeBGMVolume(this.value)">
+    </div>
+    <div class="settings-row">
+      <div class="settings-label">
+        <span class="s-icon">🔔</span>
+        <div>
+          <div class="s-text">游戏音效</div>
+          <div class="s-hint">探索、解谜、投票等音效</div>
+        </div>
+      </div>
+      <label class="toggle-switch">
+        <input type="checkbox" id="sfxToggle" checked onchange="toggleSFX()">
+        <span class="toggle-slider"></span>
+      </label>
+    </div>
+    <div class="settings-row" id="sfxVolumeRow">
+      <div class="settings-label">
+        <span class="s-icon">🔊</span>
+        <div>
+          <div class="s-text">音效音量</div>
+          <div class="s-hint" id="sfxVolLabel">70%</div>
+        </div>
+      </div>
+      <input type="range" class="volume-slider" id="sfxVolume" min="0" max="100" value="70" oninput="changeSFXVolume(this.value)">
+    </div>
+    <div style="text-align:center;margin-top:28px;display:flex;gap:12px;justify-content:center;">
+      <button class="btn btn-outline" onclick="confirmLeaveToLobby()">返回大厅</button>
+      <button class="btn btn-gold" onclick="closeSettings()">关闭设置</button>
+    </div>
+  </div>
+</div>
+
+<!-- ========== LEAVE CONFIRM OVERLAY ========== -->
+<div class="modal-overlay" id="leaveConfirmOverlay">
+  <div class="modal" style="max-width:340px;text-align:center;">
+    <div class="modal-header" style="justify-content:center;"><h3>返回大厅</h3></div>
+    <div style="padding:24px 20px;">
+      <p style="font-size:15px;color:var(--text-primary);margin:0 0 20px;">确定要返回大厅吗？<br><span style="color:var(--text-dim);font-size:13px;">当前游戏进度将会丢失</span></p>
+      <div style="display:flex;gap:12px;justify-content:center;">
+        <button class="btn btn-outline" onclick="cancelLeaveConfirm()">否</button>
+        <button class="btn btn-red" onclick="confirmLeaveYes()">是</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ========== ACT TRANSITION OVERLAY ========== -->
+<div class="modal-overlay" id="actTransitionOverlay">
+  <div class="modal" style="max-width:400px;text-align:center;">
+    <div class="modal-header" style="justify-content:center;"><h3 id="actTransitionTitle">下一幕即将开始</h3></div>
+    <div style="padding:24px 20px;">
+      <p style="font-size:15px;color:var(--text-primary);margin-bottom:12px;" id="actTransitionDesc">准备进入下一幕探索...</p>
+      <div id="actTransitionInfo" style="color:var(--text-dim);font-size:13px;margin-bottom:20px;"></div>
+      <button class="btn btn-gold" onclick="actTransitionAck()" id="actTransitionBtn">准备就绪</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// AUDIO ENGINE (Web Audio API - procedural synthesis)
+// ============================================================
+const AudioManager = {
+  ctx: null,
+  bgmNodes: {},
+  bgmPlaying: false,
+  bgmEnabled: true,
+  sfxEnabled: true,
+  bgmVolume: 0.5,
+  sfxVolume: 0.7,
+  bgmGain: null,
+
+  init() {
+    if (this.ctx) return;
+    try {
+      this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    } catch(e) {
+      console.warn('Web Audio API not supported');
+      return;
+    }
+    // Load saved preferences
+    const saved = localStorage.getItem('ms_settings');
+    if (saved) {
+      const s = JSON.parse(saved);
+      this.bgmEnabled = s.bgmEnabled ?? true;
+      this.sfxEnabled = s.sfxEnabled ?? true;
+      this.bgmVolume = s.bgmVolume ?? 0.5;
+      this.sfxVolume = s.sfxVolume ?? 0.7;
+    }
+    this.applyUISettings();
+  },
+
+  ensureContext() {
+    if (!this.ctx) this.init();
+    if (this.ctx && this.ctx.state === 'suspended') {
+      this.ctx.resume();
+    }
+    return this.ctx;
+  },
+
+  saveSettings() {
+    localStorage.setItem('ms_settings', JSON.stringify({
+      bgmEnabled: this.bgmEnabled,
+      sfxEnabled: this.sfxEnabled,
+      bgmVolume: this.bgmVolume,
+      sfxVolume: this.sfxVolume
+    }));
+  },
+
+  applyUISettings() {
+    const bgmToggle = document.getElementById('bgmToggle');
+    const sfxToggle = document.getElementById('sfxToggle');
+    const bgmVol = document.getElementById('bgmVolume');
+    const sfxVol = document.getElementById('sfxVolume');
+    const bgmLabel = document.getElementById('bgmVolLabel');
+    const sfxLabel = document.getElementById('sfxVolLabel');
+    if (bgmToggle) bgmToggle.checked = this.bgmEnabled;
+    if (sfxToggle) sfxToggle.checked = this.sfxEnabled;
+    if (bgmVol) bgmVol.value = Math.round(this.bgmVolume * 100);
+    if (sfxVol) sfxVol.value = Math.round(this.sfxVolume * 100);
+    if (bgmLabel) bgmLabel.textContent = Math.round(this.bgmVolume * 100) + '%';
+    if (sfxLabel) sfxLabel.textContent = Math.round(this.sfxVolume * 100) + '%';
+  },
+
+  // ===== BACKGROUND MUSIC =====
+  // Uses an audio file from assets/music/Background music.mp3
+  // Falls back to procedural oscillator-based ambient if the file is missing/unavailable
+  bgmAudioEl: null,
+
+  startBGM() {
+    const ctx = this.ensureContext();
+    if (!ctx || this.bgmPlaying || !this.bgmEnabled) return;
+
+    // Try loading the audio file first
+    const audioUrl = 'assets/music/Background music.mp3';
+    const audio = new Audio(audioUrl);
+    audio.loop = true;
+    audio.volume = this.bgmVolume * 0.35;
+
+    audio.addEventListener('canplaythrough', () => {
+      if (!this.bgmEnabled || this.bgmPlaying) return;
+      // Master gain for BGM
+      this.bgmGain = ctx.createGain();
+      this.bgmGain.gain.value = this.bgmVolume * 0.35;
+      this.bgmGain.connect(ctx.destination);
+
+      const src = ctx.createMediaElementSource(audio);
+      src.connect(this.bgmGain);
+      audio.play().catch(() => {});
+      this.bgmAudioEl = audio;
+      this.bgmNodes = { audio };
+      this.bgmPlaying = true;
+    }, { once: true });
+
+    audio.addEventListener('error', () => {
+      // File not found — fall back to procedural ambient music
+      this._startProceduralBGM(ctx);
+    }, { once: true });
+
+    // Timeout fallback: if the file doesn't load within 3s, use procedural
+    setTimeout(() => {
+      if (!this.bgmPlaying) {
+        this._startProceduralBGM(ctx);
+      }
+    }, 3000);
+
+    // Start loading
+    audio.load();
+  },
+
+  // Procedural ambient BGM fallback (original oscillator-based implementation)
+  _startProceduralBGM(ctx) {
+    if (this.bgmPlaying || !this.bgmEnabled) return;
+
+    // Master gain for BGM
+    this.bgmGain = ctx.createGain();
+    this.bgmGain.gain.value = this.bgmVolume * 0.35;
+    this.bgmGain.connect(ctx.destination);
+
+    // Layer 1: Deep sub-bass drone (40-80 Hz)
+    const osc1 = ctx.createOscillator();
+    const gain1 = ctx.createGain();
+    osc1.type = 'sine';
+    osc1.frequency.value = 55;
+    gain1.gain.value = 0.08;
+    const lfo1 = ctx.createOscillator();
+    const lfoGain1 = ctx.createGain();
+    lfo1.type = 'sine'; lfo1.frequency.value = 0.07;
+    lfoGain1.gain.value = 3;
+    lfo1.connect(lfoGain1).connect(osc1.frequency);
+    lfo1.start();
+    osc1.connect(gain1).connect(this.bgmGain);
+    osc1.start();
+
+    // Layer 2: Mid drone (harmonics)
+    const osc2 = ctx.createOscillator();
+    const gain2 = ctx.createGain();
+    osc2.type = 'triangle';
+    osc2.frequency.value = 110;
+    gain2.gain.value = 0.04;
+    const lfo2 = ctx.createOscillator();
+    const lfoGain2 = ctx.createGain();
+    lfo2.type = 'sine'; lfo2.frequency.value = 0.05;
+    lfoGain2.gain.value = 2;
+    lfo2.connect(lfoGain2).connect(osc2.frequency);
+    lfo2.start();
+    osc2.connect(gain2).connect(this.bgmGain);
+    osc2.start();
+
+    // Layer 3: High eerie pad
+    const osc3 = ctx.createOscillator();
+    const gain3 = ctx.createGain();
+    osc3.type = 'sine';
+    osc3.frequency.value = 220;
+    gain3.gain.value = 0.02;
+    const lfo3 = ctx.createOscillator();
+    const lfoGain3 = ctx.createGain();
+    lfo3.type = 'sine'; lfo3.frequency.value = 0.11;
+    lfoGain3.gain.value = 5;
+    lfo3.connect(lfoGain3).connect(osc3.frequency);
+    lfo3.start();
+    osc3.connect(gain3).connect(this.bgmGain);
+    osc3.start();
+
+    // Layer 4: Noise texture (wind/whisper)
+    const bufferSize = ctx.sampleRate * 2;
+    const noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    const data = noiseBuffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      data[i] = (Math.random() * 2 - 1) * 0.02;
+    }
+    const noise = ctx.createBufferSource();
+    noise.buffer = noiseBuffer; noise.loop = true;
+    const noiseFilter = ctx.createBiquadFilter();
+    noiseFilter.type = 'lowpass';
+    noiseFilter.frequency.value = 500;
+    const noiseGain = ctx.createGain();
+    noiseGain.gain.value = 0.03;
+    noise.connect(noiseFilter).connect(noiseGain).connect(this.bgmGain);
+    noise.start();
+
+    // Layer 5: Slow modulated filter sweep
+    const filterSweep = ctx.createOscillator();
+    const filterSweepGain = ctx.createGain();
+    filterSweep.type = 'sine'; filterSweep.frequency.value = 0.03;
+    filterSweepGain.gain.value = 200;
+    filterSweep.connect(filterSweepGain).connect(noiseFilter.frequency);
+    filterSweep.start();
+
+    // Layer 6: Very subtle heartbeat
+    const heartGain = ctx.createGain();
+    heartGain.gain.value = 0.015;
+    heartGain.connect(this.bgmGain);
+    this._heartbeatInterval = setInterval(() => {
+      if (!this.bgmPlaying) return;
+      const now = ctx.currentTime;
+      const hOsc = ctx.createOscillator();
+      const hGain = ctx.createGain();
+      hOsc.type = 'sine'; hOsc.frequency.value = 40;
+      hGain.gain.setValueAtTime(0.6, now);
+      hGain.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+      hOsc.connect(hGain).connect(heartGain);
+      hOsc.start(now); hOsc.stop(now + 0.7);
+    }, 3000);
+
+    this.bgmNodes = { osc1, gain1, lfo1, lfoGain1, osc2, gain2, lfo2, lfoGain2, osc3, gain3, lfo3, lfoGain3, noise, noiseFilter, noiseGain, filterSweep, filterSweepGain, heartGain };
+    this.bgmPlaying = true;
+  },
+
+  stopBGM() {
+    if (!this.bgmPlaying) return;
+    // Stop audio element if using file-based BGM
+    if (this.bgmAudioEl) {
+      try { this.bgmAudioEl.pause(); this.bgmAudioEl.currentTime = 0; } catch(e) {}
+      this.bgmAudioEl = null;
+    }
+    // Stop procedural oscillator nodes
+    Object.values(this.bgmNodes).forEach(node => {
+      try { node.stop?.(); } catch(e) {}
+    });
+    if (this._heartbeatInterval) {
+      clearInterval(this._heartbeatInterval);
+      this._heartbeatInterval = null;
+    }
+    if (this.bgmGain) {
+      try { this.bgmGain.disconnect(); } catch(e) {}
+      this.bgmGain = null;
+    }
+    this.bgmNodes = {};
+    this.bgmPlaying = false;
+  },
+
+  setBGMVolume(val) {
+    this.bgmVolume = val;
+    if (this.bgmAudioEl) {
+      this.bgmAudioEl.volume = val * 0.35;
+    }
+    if (this.bgmGain) {
+      this.bgmGain.gain.value = val * 0.35;
+    }
+    const el = document.getElementById('bgmVolLabel');
+    if (el) el.textContent = Math.round(val * 100) + '%';
+    this.saveSettings();
+  },
+
+  toggleBGM(enabled) {
+    this.bgmEnabled = enabled;
+    if (enabled && (gamePhase === 'explore' || gamePhase === 'discuss' || gamePhase === 'vote')) {
+      this.startBGM();
+    } else if (!enabled) {
+      this.stopBGM();
+    }
+    this.saveSettings();
+  },
+
+  // ===== SOUND EFFECTS =====
+  playSFX(type) {
+    if (!this.sfxEnabled) return;
+    const ctx = this.ensureContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const vol = this.sfxVolume;
+
+    switch(type) {
+
+    case 'item_found':
+      // Bright discovery chime
+      [523, 659, 784].forEach((freq, i) => {
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.type = 'sine';
+        o.frequency.value = freq;
+        g.gain.setValueAtTime(vol * 0.25, now + i * 0.08);
+        g.gain.exponentialRampToValueAtTime(0.001, now + i * 0.08 + 0.5);
+        o.connect(g).connect(ctx.destination);
+        o.start(now + i * 0.08); o.stop(now + i * 0.08 + 0.6);
+      });
+      break;
+
+    case 'room_enter':
+      // Subtle spatial whoosh
+      const rOsc = ctx.createOscillator();
+      const rGain = ctx.createGain();
+      rOsc.type = 'sine';
+      rOsc.frequency.setValueAtTime(200, now);
+      rOsc.frequency.exponentialRampToValueAtTime(600, now + 0.15);
+      rGain.gain.setValueAtTime(vol * 0.08, now);
+      rGain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+      rOsc.connect(rGain).connect(ctx.destination);
+      rOsc.start(now); rOsc.stop(now + 0.3);
+      break;
+
+    case 'puzzle_solve':
+      // Ascending triumph
+      [523, 659, 784, 1047].forEach((freq, i) => {
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.type = 'triangle';
+        o.frequency.value = freq;
+        g.gain.setValueAtTime(vol * 0.3, now + i * 0.1);
+        g.gain.exponentialRampToValueAtTime(0.001, now + i * 0.1 + 0.6);
+        o.connect(g).connect(ctx.destination);
+        o.start(now + i * 0.1); o.stop(now + i * 0.1 + 0.7);
+      });
+      break;
+
+    case 'puzzle_fail':
+      // Low dissonant buzz
+      const fOsc = ctx.createOscillator();
+      const fGain = ctx.createGain();
+      fOsc.type = 'sawtooth';
+      fOsc.frequency.setValueAtTime(120, now);
+      fOsc.frequency.linearRampToValueAtTime(80, now + 0.4);
+      fGain.gain.setValueAtTime(vol * 0.15, now);
+      fGain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+      fOsc.connect(fGain).connect(ctx.destination);
+      fOsc.start(now); fOsc.stop(now + 0.5);
+      break;
+
+    case 'chat_message':
+      // Subtle click
+      const cOsc = ctx.createOscillator();
+      const cGain = ctx.createGain();
+      cOsc.type = 'sine';
+      cOsc.frequency.value = 800;
+      cGain.gain.setValueAtTime(vol * 0.06, now);
+      cGain.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
+      cOsc.connect(cGain).connect(ctx.destination);
+      cOsc.start(now); cOsc.stop(now + 0.07);
+      break;
+
+    case 'vote_cast':
+      // Dramatic hit
+      const vOsc = ctx.createOscillator();
+      const vGain = ctx.createGain();
+      vOsc.type = 'triangle';
+      vOsc.frequency.setValueAtTime(300, now);
+      vOsc.frequency.exponentialRampToValueAtTime(80, now + 0.5);
+      vGain.gain.setValueAtTime(vol * 0.4, now);
+      vGain.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+      vOsc.connect(vGain).connect(ctx.destination);
+      vOsc.start(now); vOsc.stop(now + 0.6);
+      break;
+
+    case 'game_start':
+      // Deep introductory rumble
+      const gsOsc = ctx.createOscillator();
+      const gsGain = ctx.createGain();
+      gsOsc.type = 'sine';
+      gsOsc.frequency.setValueAtTime(30, now);
+      gsOsc.frequency.exponentialRampToValueAtTime(60, now + 1.5);
+      gsGain.gain.setValueAtTime(vol * 0.5, now);
+      gsGain.gain.exponentialRampToValueAtTime(0.001, now + 2);
+      gsOsc.connect(gsGain).connect(ctx.destination);
+      gsOsc.start(now); gsOsc.stop(now + 2);
+      break;
+
+    case 'game_end_win':
+      // Short fanfare
+      [392, 523, 659, 784].forEach((freq, i) => {
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.type = 'triangle';
+        o.frequency.value = freq;
+        g.gain.setValueAtTime(vol * 0.35, now + i * 0.15);
+        g.gain.exponentialRampToValueAtTime(0.001, now + i * 0.15 + 0.8);
+        o.connect(g).connect(ctx.destination);
+        o.start(now + i * 0.15); o.stop(now + i * 0.15 + 0.9);
+      });
+      break;
+
+    case 'game_end_lose':
+      // Ominous descending
+      [330, 277, 233, 165].forEach((freq, i) => {
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.type = 'sawtooth';
+        o.frequency.value = freq;
+        g.gain.setValueAtTime(vol * 0.2, now + i * 0.25);
+        g.gain.exponentialRampToValueAtTime(0.001, now + i * 0.25 + 1);
+        o.connect(g).connect(ctx.destination);
+        o.start(now + i * 0.25); o.stop(now + i * 0.25 + 1);
+      });
+      break;
+
+    case 'story_next':
+      // Mysterious tension
+      const sOsc = ctx.createOscillator();
+      const sGain = ctx.createGain();
+      sOsc.type = 'sine';
+      sOsc.frequency.setValueAtTime(200, now);
+      sOsc.frequency.exponentialRampToValueAtTime(100, now + 0.8);
+      sGain.gain.setValueAtTime(vol * 0.2, now);
+      sGain.gain.exponentialRampToValueAtTime(0.001, now + 1);
+      sOsc.connect(sGain).connect(ctx.destination);
+      sOsc.start(now); sOsc.stop(now + 1);
+      break;
+
+    case 'key_use':
+      // Unlock mechanism sound
+      [800, 1200, 1600].forEach((freq, i) => {
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.type = 'square';
+        o.frequency.value = freq;
+        g.gain.setValueAtTime(vol * 0.12, now + i * 0.06);
+        g.gain.exponentialRampToValueAtTime(0.001, now + i * 0.06 + 0.2);
+        o.connect(g).connect(ctx.destination);
+        o.start(now + i * 0.06); o.stop(now + i * 0.06 + 0.25);
+      });
+      break;
+
+    case 'player_join':
+      [440, 554].forEach((freq, i) => {
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.type = 'sine';
+        o.frequency.value = freq;
+        g.gain.setValueAtTime(vol * 0.15, now + i * 0.1);
+        g.gain.exponentialRampToValueAtTime(0.001, now + i * 0.1 + 0.4);
+        o.connect(g).connect(ctx.destination);
+        o.start(now + i * 0.1); o.stop(now + i * 0.1 + 0.5);
+      });
+      break;
+
+    case 'timer_warning':
+      // Urgent tick
+      const tOsc = ctx.createOscillator();
+      const tGain = ctx.createGain();
+      tOsc.type = 'square';
+      tOsc.frequency.value = 1000;
+      tGain.gain.setValueAtTime(vol * 0.2, now);
+      tGain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+      tOsc.connect(tGain).connect(ctx.destination);
+      tOsc.start(now); tOsc.stop(now + 0.12);
+      break;
+
+    case 'clue_shared':
+      // Notification ping
+      const pOsc = ctx.createOscillator();
+      const pGain = ctx.createGain();
+      pOsc.type = 'sine';
+      pOsc.frequency.setValueAtTime(880, now);
+      pOsc.frequency.setValueAtTime(1100, now + 0.08);
+      pGain.gain.setValueAtTime(vol * 0.15, now);
+      pGain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+      pOsc.connect(pGain).connect(ctx.destination);
+      pOsc.start(now); pOsc.stop(now + 0.3);
+      break;
+    }
+  },
+
+  // ===== SFX CONTROLS =====
+  setSFXVolume(val) {
+    this.sfxVolume = val;
+    const el = document.getElementById('sfxVolLabel');
+    if (el) el.textContent = Math.round(val * 100) + '%';
+    this.saveSettings();
+  },
+
+  toggleSFX(enabled) {
+    this.sfxEnabled = enabled;
+    if (enabled) {
+      // Play a quick test sound
+      this.playSFX('chat_message');
+    }
+    this.saveSettings();
+  }
+};
+
+// Initialize audio on first user interaction
+document.addEventListener('click', () => { AudioManager.ensureContext(); }, { once: true });
+document.addEventListener('keydown', () => { AudioManager.ensureContext(); }, { once: true });
+
+// ============================================================
+// SETTINGS HANDLERS
+// ============================================================
+function openSettings() {
+  AudioManager.init();
+  document.getElementById('settingsOverlay').classList.add('active');
+  AudioManager.playSFX('chat_message');
+}
+
+function closeSettings() {
+  document.getElementById('settingsOverlay').classList.remove('active');
+}
+
+// ========== NOTEPAD ==========
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+let notepadNotes = [];
+
+// Load saved notes from localStorage
+function loadNotepadNotes() {
+  try {
+    const saved = localStorage.getItem('murderMysteryNotepad');
+    if (saved) {
+      notepadNotes = JSON.parse(saved);
+    }
+  } catch(e) {
+    notepadNotes = [];
+  }
+}
+
+// Save notes to localStorage
+function saveNotepadNotes() {
+  try {
+    localStorage.setItem('murderMysteryNotepad', JSON.stringify(notepadNotes));
+  } catch(e) {}
+}
+
+// Initialize on load
+loadNotepadNotes();
+
+function toggleNotepad() {
+  const overlay = document.getElementById('notepadOverlay');
+  if (!overlay) return;
+  if (overlay.classList.contains('show')) {
+    closeNotepad();
+  } else {
+    openNotepad();
+  }
+}
+
+function openNotepad() {
+  const overlay = document.getElementById('notepadOverlay');
+  if (!overlay) return;
+  renderNotepad();
+  overlay.classList.add('show');
+  setTimeout(() => {
+    const input = document.getElementById('notepadInput');
+    if (input) input.focus();
+  }, 100);
+}
+
+function closeNotepad() {
+  const overlay = document.getElementById('notepadOverlay');
+  if (!overlay) return;
+  overlay.classList.remove('show');
+}
+
+function addNotepadNote() {
+  const input = document.getElementById('notepadInput');
+  if (!input) return;
+  const text = input.value.trim();
+  if (!text) return;
+
+  notepadNotes.unshift({
+    id: Date.now() + '_' + Math.floor(Math.random() * 10000),
+    text: text,
+    time: Date.now()
+  });
+
+  input.value = '';
+  autoResizeNotepadInput(input);
+  saveNotepadNotes();
+  renderNotepad();
+  updateNotepadBadge();
+}
+
+function deleteNotepadNote(id) {
+  notepadNotes = notepadNotes.filter(n => String(n.id) !== String(id));
+  saveNotepadNotes();
+  renderNotepad();
+  updateNotepadBadge();
+}
+
+function clearAllNotepadNotes() {
+  if (notepadNotes.length === 0) return;
+  notepadNotes = [];
+  saveNotepadNotes();
+  renderNotepad();
+  updateNotepadBadge();
+}
+
+function renderNotepad() {
+  const body = document.getElementById('notepadBody');
+  if (!body) return;
+
+  if (notepadNotes.length === 0) {
+    body.innerHTML = `<div class="notepad-empty">还没有任何笔记<br>在下方输入框中记录线索信息</div>`;
+    return;
+  }
+
+  let html = '';
+  notepadNotes.forEach(note => {
+    const timeStr = formatNotepadTime(note.time);
+    html += `<div class="notepad-note">
+      <div style="flex:1;">
+        <div class="notepad-note-text">${escapeHtml(note.text)}</div>
+        <div class="notepad-note-time">${timeStr}</div>
+      </div>
+      <button class="notepad-note-del" onclick="deleteNotepadNote('${note.id}')" title="删除">🗑</button>
+    </div>`;
+  });
+
+  html += `<div style="text-align:right;margin-top:4px;">
+    <button class="notepad-clear-all" onclick="clearAllNotepadNotes()">清空全部</button>
+  </div>`;
+
+  body.innerHTML = html;
+}
+
+function updateNotepadBadge() {
+  const badge = document.getElementById('notepadBadge');
+  if (!badge) return;
+  if (notepadNotes.length > 0) {
+    badge.textContent = notepadNotes.length;
+    badge.style.display = 'flex';
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+function formatNotepadTime(ts) {
+  const d = new Date(ts);
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return `${hh}:${mm}`;
+}
+
+function autoResizeNotepadInput(el) {
+  if (!el) return;
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 100) + 'px';
+  const btn = document.getElementById('notepadAddBtn');
+  if (btn) btn.disabled = !el.value.trim();
+}
+
+// Update badge on page load
+updateNotepadBadge();
+
+// Enter to add note (Shift+Enter for newline) — scoped to notepad input only
+document.addEventListener('keydown', function(e) {
+  const input = document.getElementById('notepadInput');
+  if (input && document.activeElement === input) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      addNotepadNote();
+    }
+  }
+  if (e.key === 'Escape') {
+    const np = document.getElementById('notepadOverlay');
+    if (np && np.classList.contains('show')) { e.preventDefault(); closeNotepad(); }
+    const pg = document.getElementById('prologueOverlay');
+    if (pg && pg.classList.contains('show')) { e.preventDefault(); closePrologueReview(); }
+    const cs = document.getElementById('characterStoryOverlay');
+    if (cs && cs.classList.contains('show')) { e.preventDefault(); closeCharacterStory(); }
+  }
+});
+
+// ========== PROLOGUE REVIEW ==========
+const PROLOGUE_SEGMENTS = [
+  {
+    title: '序幕 — 暴风雨之夜',
+    text: '暴风雨之夜，闪电划破天际。\n\n你们六个人，各有各的目的，在同一个夜晚来到了位于郊外的"晨曦生物研究所"。\n\n研究所的主人——曹文轩博士，邀请大家参加一场"成果展示晚宴"。然而，当你们踏入这栋建筑时，迎接你们的不是美酒佳肴，而是一具冰冷的尸体。\n\n保安队长陈默，倒在化学实验室的地板上，嘴角挂着诡异的微笑，皮肤呈现出不正常的樱桃红色。\n\n大门在你们身后缓缓关上，电子锁发出"咔嗒"一声。你们被困住了。'
+  },
+  {
+    title: '角色分配',
+    text: '研究所的应急灯闪烁着微弱的光芒。\n\n"必须找出凶手才能离开。"大厅的广播里传出沙哑的机械声。\n\n你们开始环顾四周——这是一栋多层的建筑，有实验室、藏书室、厨房、卧室、浴室，还有一个地下车库。\n\n每个人都神情紧张。毕竟，凶手就在你们中间......\n\n现在，你们将收到各自的角色剧本。请仔细阅读，不要向他人透露你的秘密。\n\n阅读完毕后，你们可以自由探索各个房间，寻找线索。'
+  }
+];
+
+function openPrologueReview() {
+  const body = document.getElementById('prologueBody');
+  let html = '';
+  PROLOGUE_SEGMENTS.forEach(seg => {
+    html += `<div style="margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid var(--border);">
+      <h3 style="color:var(--accent-gold);margin-bottom:10px;font-size:16px;">${escapeHtml(seg.title)}</h3>
+      <p style="color:var(--text-secondary);line-height:1.8;font-size:14px;white-space:pre-wrap;">${escapeHtml(seg.text)}</p>
+    </div>`;
+  });
+  body.innerHTML = html;
+  document.getElementById('prologueOverlay').classList.add('show');
+}
+
+function closePrologueReview() {
+  document.getElementById('prologueOverlay').classList.remove('show');
+}
+
+// ========== CHARACTER STORY ==========
+function openCharacterStory() {
+  const body = document.getElementById('characterStoryBody');
+  if (!myCharacter) {
+    body.innerHTML = '<div style="text-align:center;color:var(--text-dim);padding:40px;">还未分配角色</div>';
+  } else {
+    const ch = myCharacter;
+    const charNames = ['曹文轩','林薇','张峰','苏婉清','赵强','周明远'];
+    const cIdx = charNames.indexOf(ch.name);
+    const avatarImg = cIdx >= 0 ? `assets/characters/character_${cIdx}.jpg` : '';
+    const avatarHtml = avatarImg
+      ? `<img src="${avatarImg}" style="width:80px;height:80px;border-radius:50%;object-fit:cover;border:3px solid ${ch.color};margin-bottom:8px;" onerror="this.style.display='none'">`
+      : `<div class="char-avatar">${ch.avatar}</div>`;
+
+    body.innerHTML = `
+      <div style="text-align:center;margin-bottom:20px;">
+        ${avatarHtml}
+        <div style="font-size:20px;font-weight:700;color:${ch.color};">${escapeHtml(ch.name)}</div>
+        <div style="font-size:13px;color:var(--text-dim);margin-top:4px;">${escapeHtml(ch.title)} · ${escapeHtml(ch.role)}</div>
+      </div>
+      <div style="margin-bottom:16px;">
+        <h3 style="color:var(--accent-gold);font-size:14px;margin-bottom:6px;">你的故事</h3>
+        <p style="color:var(--text-secondary);line-height:1.7;font-size:13px;">${escapeHtml(ch.backstory)}</p>
+      </div>
+      <div style="margin-bottom:16px;">
+        <h3 style="color:var(--accent-red);font-size:14px;margin-bottom:6px;">你的秘密</h3>
+        <p style="color:var(--text-secondary);line-height:1.7;font-size:13px;">${escapeHtml(ch.secret)}</p>
+      </div>
+      <div>
+        <h3 style="color:var(--accent-gold);font-size:14px;margin-bottom:6px;">你的目标</h3>
+        <p style="color:var(--text-secondary);line-height:1.7;font-size:13px;">${escapeHtml(ch.goal)}</p>
+      </div>
+    `;
+  }
+  document.getElementById('characterStoryOverlay').classList.add('show');
+}
+
+function closeCharacterStory() {
+  document.getElementById('characterStoryOverlay').classList.remove('show');
+}
+
+let pausedTimerEnd = 0;
+let timerWasRunning = false;
+
+function pauseTimer() {
+  if (timerInterval) {
+    timerWasRunning = true;
+    // Save remaining time
+    const elapsed = Date.now() - phaseStartTime;
+    const total = phaseDuration * 1000;
+    const remaining = Math.max(0, total - elapsed);
+    pausedTimerEnd = remaining;
+    stopTimer();
+  }
+}
+
+function resumeTimer() {
+  if (timerWasRunning && pausedTimerEnd > 0) {
+    phaseStartTime = Date.now();
+    phaseDuration = pausedTimerEnd / 1000;
+    const endTime = Date.now() + pausedTimerEnd;
+    timerInterval = setInterval(() => {
+      const remaining = Math.max(0, Math.ceil((endTime - Date.now()) / 1000));
+      const min = Math.floor(remaining / 60);
+      const sec = remaining % 60;
+      const el = document.getElementById('headerTimer');
+      if (el) {
+        el.textContent = `${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+        if (remaining <= 30) el.style.color = 'var(--accent-red)';
+        else el.style.color = 'var(--accent-gold)';
+      }
+      updateProgressBar(remaining, phaseDuration);
+      if (remaining <= 0) { stopTimer(); hideProgressBar(); }
+    }, 1000);
+    pausedTimerEnd = 0;
+    timerWasRunning = false;
+  }
+}
+
+function confirmLeaveToLobby() {
+  closeSettings();
+  pauseTimer();
+  document.getElementById('leaveConfirmOverlay').classList.add('active');
+}
+
+function cancelLeaveConfirm() {
+  document.getElementById('leaveConfirmOverlay').classList.remove('active');
+  resumeTimer();
+}
+
+function confirmLeaveYes() {
+  document.getElementById('leaveConfirmOverlay').classList.remove('active');
+  showScreen('lobby');
+}
+
+function toggleBGM() {
+  AudioManager.toggleBGM(document.getElementById('bgmToggle').checked);
+}
+
+function toggleSFX() {
+  AudioManager.toggleSFX(document.getElementById('sfxToggle').checked);
+}
+
+function changeBGMVolume(val) {
+  AudioManager.setBGMVolume(parseInt(val) / 100);
+}
+
+function changeSFXVolume(val) {
+  AudioManager.setSFXVolume(parseInt(val) / 100);
+}
+
+// ============================================================
+// PERSONAL TASK
+// ============================================================
+const CHARACTER_TASKS = {
+  '曹文轩': [
+    { label: '全局任务', text: '隐瞒你是凶手的身份，将嫌疑转移到其他人身上。' },
+    { label: '第一幕', text: '确保没有人注意到实验室药瓶的异常。' },
+    { label: '第二幕', text: '不要让其他人发现勒索信与你的关联。' },
+    { label: '第三幕', text: '防止他人打开保险箱获得关键证据。' },
+    { label: '第四幕', text: '在讨论中引导大家怀疑其他人。' }
+  ],
+  '林薇': [
+    { label: '全局任务', text: '隐藏你的勒索行为，同时收集足够线索保护自己。' },
+    { label: '第一幕', text: '搜索实验室，了解毒药的种类和来源。' },
+    { label: '第二幕', text: '找到你写给曹博士的勒索信，确保它不会暴露你。' },
+    { label: '第三幕', text: '找到更多关于其他嫌疑人动机的线索。' },
+    { label: '第四幕', text: '在投票前判断谁是真正的凶手，以免被误投。' }
+  ],
+  '张峰': [
+    { label: '全局任务', text: '保护你泄露实验数据的秘密不被发现，同时找出凶手。' },
+    { label: '第一幕', text: '在实验室中寻找你参与实验的证据并销毁或隐藏。' },
+    { label: '第二幕', text: '找到你的辞职申请，确认曹博士是否已经看到。' },
+    { label: '第三幕', text: '搜索浴室和车库，寻找与实验数据泄露相关的线索。' },
+    { label: '第四幕', text: '判断凶手身份，确保自己的秘密不会被揭露。' }
+  ],
+  '苏婉清': [
+    { label: '全局任务', text: '保护陈默的遗物和真相，找出杀害他的凶手。' },
+    { label: '第一幕', text: '检查陈默的尸体和相关物品，确认死因。' },
+    { label: '第二幕', text: '了解陈默生前接触过的人和他的发现。' },
+    { label: '第三幕', text: '找到决定性的物证——凶器和保险箱内容。' },
+    { label: '第四幕', text: '用你掌握的医学知识帮助大家识别真凶。' }
+  ],
+  '赵强': [
+    { label: '全局任务', text: '隐藏你潜入研究所的真正目的，同时找到有价值的商业机密。' },
+    { label: '第一幕', text: '搜索实验室的研究成果和商业价值信息。' },
+    { label: '第二幕', text: '找到关于研究所财务状况或合作方的线索。' },
+    { label: '第三幕', text: '在车库中寻找曹博士的私人物品或文件。' },
+    { label: '第四幕', text: '在讨论中保持低调，避免引起他人怀疑。' }
+  ],
+  '周明远': [
+    { label: '全局任务', text: '作为法律顾问，收集足够的证据来做出公正的判断。' },
+    { label: '第一幕', text: '仔细记录现场的每一个细节，为后续推理做准备。' },
+    { label: '第二幕', text: '找到每个人的动机和不在场证明。' },
+    { label: '第三幕', text: '找到物证——凶器、毒药来源和密室文件。' },
+    { label: '第四幕', text: '用严密的逻辑推理找出凶手，并说服其他人。' }
+  ]
+};
+
+function getCurrentTaskHtml() {
+  if (!myCharacter) return '<div style="color:var(--text-dim);text-align:center;padding:20px;">暂无任务</div>';
+  const tasks = CHARACTER_TASKS[myCharacter.name];
+  if (!tasks) return '<div style="color:var(--text-dim);text-align:center;padding:20px;">暂无任务</div>';
+
+  const actTasks = tasks.filter(t => t.label === '全局任务' || t.label === `第${currentActLabel()}幕`);
+  if (actTasks.length === 0) return tasks.map(t => `<div class="task-item"><div class="task-label">${t.label}</div><div class="task-text">${t.text}</div></div>`).join('');
+
+  return actTasks.map(t => `<div class="task-item"><div class="task-label">${t.label}</div><div class="task-text">${t.text}</div></div>`).join('');
+}
+
+function currentActLabel() {
+  const labels = { 1:'一', 2:'二', 3:'三', 4:'四' };
+  const act = getCurrentAct();
+  return labels[act] || '一';
+}
+
+function getCurrentAct() {
+  // Use server state first (handles 0 → 1 transition)
+  if (lastGameState && lastGameState.currentAct !== undefined && lastGameState.currentAct !== null) {
+    return lastGameState.currentAct || 1;
+  }
+  const el = document.getElementById('phaseBadge');
+  if (!el) return 1;
+  const match = el.textContent.match(/第(\S)幕/);
+  if (match) {
+    const map = { '一':1, '二':2, '三':3, '四':4 };
+    return map[match[1]] || 1;
+  }
+  return 1;
+}
+
+function openTaskModal() {
+  document.getElementById('taskContent').innerHTML = getCurrentTaskHtml();
+  document.getElementById('taskModalOverlay').classList.add('active');
+  AudioManager.playSFX('chat_message');
+}
+
+function closeTaskModal() {
+  document.getElementById('taskModalOverlay').classList.remove('active');
+}
+
+function showTaskButton() {
+  const bar = document.getElementById('taskBar');
+  if (bar && myCharacter) bar.style.display = 'block';
+}
+
+function hideTaskButton() {
+  const bar = document.getElementById('taskBar');
+  if (bar) bar.style.display = 'none';
+}
+
+// ============================================================
+// CLIENT STATE
+// ============================================================
+const socket = io();
+let myPlayerId = -1;
+let myCharacter = null;
+let gamePhase = 'waiting';
+let currentRoom = 'entrance';
+let roomEntered = false;
+let inventory = [];
+let collapsedClueSections = new Set(); // tracks collapsed section IDs: 'cat_personal', 'cat_public', 'act_personal_1', 'act_public_2', etc.
+let allPlayers = [];
+let roomCode = '';
+let timerInterval = null;
+let phaseStartTime = 0;
+let phaseDuration = 0;
+let lastGameState = {};
+let globalFoundClues = [];
+let globalDestroyedItems = [];
+let sharedClues = []; // clues shared publicly in chat (by players or AI)
+
+// ============================================================
+// INTERACTION EFFECTS
+// ============================================================
+function sparkleAt(x, y, count = 12) {
+  const container = document.getElementById('sparkleContainer');
+  for (let i = 0; i < count; i++) {
+    const sparkle = document.createElement('div');
+    sparkle.className = 'sparkle';
+    sparkle.style.left = x + 'px';
+    sparkle.style.top = y + 'px';
+    const sx = (Math.random() - 0.5) * 120;
+    const sy = (Math.random() - 0.5) * 120;
+    sparkle.style.setProperty('--sx', sx + 'px');
+    sparkle.style.setProperty('--sy', sy + 'px');
+    sparkle.style.animationDuration = (0.5 + Math.random() * 0.6) + 's';
+    sparkle.style.width = (4 + Math.random() * 8) + 'px';
+    sparkle.style.height = sparkle.style.width;
+    const colors = ['#d4a017', '#e74c3c', '#f39c12', '#ff6b6b'];
+    sparkle.style.background = colors[Math.floor(Math.random() * colors.length)];
+    container.appendChild(sparkle);
+    setTimeout(() => sparkle.remove(), 900);
+  }
+}
+
+function sparkleCenter(count = 16) {
+  sparkleAt(window.innerWidth / 2, window.innerHeight / 2, count);
+}
+
+function showPhaseBanner(text, color = '#d4a017') {
+  // Remove any existing banner first
+  const old = document.getElementById('phaseBanner');
+  if (old) old.remove();
+  const el = document.createElement('div');
+  el.id = 'phaseBanner';
+  el.className = 'phase-banner';
+  el.textContent = text;
+  el.style.color = color;
+  document.body.appendChild(el);
+  setTimeout(() => { if (el.parentNode) el.remove(); }, 2600);
+}
+
+function animateRoomContent() {
+  const content = document.getElementById('gameContent');
+  if (content) {
+    content.classList.remove('room-slide-in');
+    void content.offsetWidth;
+    content.classList.add('room-slide-in');
+  }
+}
+
+function highlightNewMessage(msgEl) {
+  msgEl.classList.add('chat-msg-highlight');
+  setTimeout(() => msgEl.classList.remove('chat-msg-highlight'), 700);
+}
+
+function addRipple(e) {
+  const btn = e.currentTarget;
+  const rect = btn.getBoundingClientRect();
+  const ripple = document.createElement('span');
+  ripple.className = 'ripple-effect';
+  ripple.style.left = (e.clientX - rect.left) + 'px';
+  ripple.style.top = (e.clientY - rect.top) + 'px';
+  ripple.style.width = ripple.style.height = Math.max(rect.width, rect.height) + 'px';
+  btn.style.position = 'relative';
+  btn.style.overflow = 'hidden';
+  btn.appendChild(ripple);
+  setTimeout(() => ripple.remove(), 700);
+}
+
+// ============================================================
+// BOTTOM PROGRESS BAR
+// ============================================================
+function updateProgressBar(remaining, duration) {
+  const bar = document.getElementById('phaseProgressBar');
+  const label = document.getElementById('phaseProgressLabel');
+  const fill = document.getElementById('phaseProgressFill');
+  const time = document.getElementById('phaseProgressTime');
+  if (!bar || !fill || !time) return;
+
+  bar.classList.add('active');
+  const pct = duration > 0 ? Math.max(0, (remaining / duration) * 100) : 100;
+  fill.style.width = pct + '%';
+
+  const min = Math.floor(remaining / 60);
+  const sec = remaining % 60;
+  time.textContent = `${String(min).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+
+  // Phase label + color
+  const phaseClasses = { explore: 'explore', dm_question: 'discuss', discuss: 'discuss', vote: 'vote' };
+  const phaseLabels = { explore: '自由探索', dm_question: 'DM提问', discuss: '推理讨论', vote: '投票表决' };
+  const cls = phaseClasses[gamePhase] || 'explore';
+  label.textContent = phaseLabels[gamePhase] || '';
+  label.className = 'phase-progress-label ' + cls;
+  fill.className = 'phase-progress-fill ' + cls;
+
+  // Urgent pulse when <30s
+  if (remaining <= 30 && remaining > 0) {
+    fill.classList.add('urgent');
+  } else {
+    fill.classList.remove('urgent');
+  }
+}
+
+function hideProgressBar() {
+  const bar = document.getElementById('phaseProgressBar');
+  if (bar) bar.classList.remove('active');
+}
+
+// Room data (mirrored from server for display)
+const ROOMS = {
+  entrance: { name: '玄关大厅', icon: '🚪', img: 'assets/scenes/entrance.jpg', connects: ['lab', 'library', 'kitchen', 'bedroom', 'bathroom', 'garage'] },
+  lab: { name: '化学实验室', icon: '🧪', img: 'assets/scenes/lab.jpg', connects: ['entrance'] },
+  library: { name: '藏书室', icon: '📚', img: 'assets/scenes/library.jpg', connects: ['entrance', 'secret_room'] },
+  kitchen: { name: '厨房', icon: '🍳', img: 'assets/scenes/kitchen.jpg', connects: ['entrance'] },
+  bedroom: { name: '主卧', icon: '🛏️', img: 'assets/scenes/bedroom.jpg', connects: ['entrance'] },
+  bathroom: { name: '浴室', icon: '🚿', img: 'assets/scenes/bathroom.jpg', connects: ['entrance'] },
+  garage: { name: '地下车库', icon: '🚗', img: 'assets/scenes/garage.jpg', connects: ['entrance'] },
+  secret_room: { name: '密室', icon: '🔐', img: 'assets/scenes/secret_room.jpg', connects: ['library'] }
+};
+
+const CLUE_IMAGES = {
+  // Act 1
+  painting: 'assets/clues/secret_key.jpg',
+  lab_notebook: 'assets/clues/lab_notebook.jpg',
+  microscope_slide: 'assets/clues/microscope_slide.jpg',
+  floor_marks: 'assets/clues/hammer.jpg',
+  lab_coat: 'assets/clues/lab_coat.jpg',
+  hidden_note_act1: 'assets/clues/hidden_note.jpg',
+  hidden_phone_act1: 'assets/clues/hidden_phone.jpg',
+  vase_fragments: 'assets/clues/vase_fragments.jpg',
+  visitor_log: 'assets/clues/visitor_log.jpg',
+  power_outage: 'assets/clues/power_outage.jpg',
+  reagent_shelf: 'assets/clues/reagent_shelf.jpg',
+  trash_paper: 'assets/clues/trash_paper.jpg',
+  chemical_bucket: 'assets/clues/chemical_bucket.jpg',
+  hammer_visible: 'assets/clues/hammer.jpg',
+  entrance_fiber: 'assets/clues/visitor_log.jpg',
+  clock_stopped: 'assets/clues/safe_box.jpg',
+  mud_footprint: 'assets/clues/shoe_print.jpg',
+  emergency_exit_act1: 'assets/clues/shoe_print.jpg',
+  corpse_wallet: 'assets/clues/blackmail_letter.jpg',
+  corpse_shoes: 'assets/clues/shoe_print.jpg',
+  // Act 2
+  letter1: 'assets/clues/blackmail_letter.jpg',
+  letter2: 'assets/clues/resignation_letter.jpg',
+  diary: 'assets/clues/diary.jpg',
+  bedroom_note: 'assets/clues/diary.jpg',
+  cup: 'assets/clues/poison_cup.jpg',
+  broken_bottle: 'assets/clues/shattered_glass.jpg',
+  hidden_notebook_act2: 'assets/clues/resignation_letter.jpg',
+  hidden_lins_threat: 'assets/clues/hidden_phone.jpg',
+  wine_bottle: 'assets/clues/wine_bottle.jpg',
+  scale_powder: 'assets/clues/scale_powder.jpg',
+  faded_photo: 'assets/clues/faded_photo.jpg',
+  window_scratch: 'assets/clues/window_scratch.jpg',
+  phone_record: 'assets/clues/blackmail_letter.jpg',
+  pill_bottle: 'assets/clues/medicine_box.jpg',
+  visitor_log_act2: 'assets/clues/visitor_log.jpg',
+  su_resume: 'assets/clues/resignation_letter.jpg',
+  fang_contract: 'assets/clues/research_funding.jpg',
+  zhou_notes: 'assets/clues/resignation_letter.jpg',
+  kitchen_glove: 'assets/clues/chemical_bucket.jpg',
+  // Act 3
+  mirror_message: 'assets/clues/mirror_writing.jpg',
+  medicine_box: 'assets/clues/medicine_box.jpg',
+  surveillance: 'assets/clues/safe_box.jpg',
+  safe_note: 'assets/clues/safe_box.jpg',
+  hammer: 'assets/clues/hammer.jpg',
+  vent_papers: 'assets/clues/mirror_writing.jpg',
+  torn_photo: 'assets/clues/faded_photo.jpg',
+  blood_trail: 'assets/clues/hammer.jpg',
+  hidden_phone_act3: 'assets/clues/hidden_phone.jpg',
+  hidden_secret_key_found: 'assets/clues/secret_key.jpg',
+  blood_rag: 'assets/clues/blood_rag.jpg',
+  anonymous_letter: 'assets/clues/blackmail_letter.jpg',
+  shoe_print: 'assets/clues/shoe_print.jpg',
+  pill_bottle_act3: 'assets/clues/medicine_box.jpg',
+  wiring: 'assets/clues/power_outage.jpg',
+  chen_work_log: 'assets/clues/visitor_log.jpg',
+  su_bag: 'assets/clues/su_medical.jpg',
+  wire_cut: 'assets/clues/window_scratch.jpg',
+  // Act 4
+  partnership: 'assets/clues/research_funding.jpg',
+  confession_letter: 'assets/clues/diary.jpg',
+  computer_files: 'assets/clues/safe_box.jpg',
+  usb_drive: 'assets/clues/lab_coat.jpg',
+  hidden_card_act4: 'assets/clues/hidden_card.jpg',
+  hidden_twist_reveal: 'assets/clues/safe_box.jpg',
+  research_funding: 'assets/clues/research_funding.jpg',
+  su_medical: 'assets/clues/su_medical.jpg',
+  autopsy_report: 'assets/clues/resignation_letter.jpg',
+  email_draft: 'assets/clues/safe_box.jpg',
+  zhou_statement: 'assets/clues/resignation_letter.jpg',
+  emergency_exit: 'assets/clues/shoe_print.jpg',
+  wine_residue: 'assets/clues/wine_bottle.jpg',
+  glove_dna: 'assets/clues/chemical_bucket.jpg',
+  su_last_note: 'assets/clues/diary.jpg',
+  fang_last_entry: 'assets/clues/hidden_phone.jpg',
+  chen_truth: 'assets/clues/diary.jpg',
+  // Special
+  secret_room_key: 'assets/clues/secret_key.jpg'
+};
+
+// Unified clue image HTML generator — ALWAYS shows an image (real photo or fallback placeholder)
+// This function is the single source of truth for clue imagery in all detail modals.
+// CRITICAL: Every clue detail modal must use this function to include a clue image.
+function getClueImageHtml(itemKey, itemName) {
+  const safeKey = itemKey || '';
+  const src = CLUE_IMAGES[safeKey];
+  const alt = itemName || '线索示意图';
+  if (src) {
+    // Real image with graceful fallback to placeholder on error
+    return `<img class="clue-modal-image clue-pop" src="${src}" alt="${alt}" onerror="this.onerror=null;this.src='data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22400%22 height=%22300%22><rect width=%22400%22 height=%22300%22 fill=%22%231a1a2e%22 stroke=%22%23d4a017%22 stroke-width=%223%22/><text x=%22200%22 y=%22140%22 text-anchor=%22middle%22 fill=%22%23d4a017%22 font-size=%2248%22>🔍</text><text x=%22200%22 y=%22190%22 text-anchor=%22middle%22 fill=%22%23959a9e%22 font-size=%2216%22>线索示意图</text></svg>';">`;
+  }
+  // Fallback SVG placeholder for clues without a mapped image
+  return `<img class="clue-modal-image clue-pop" src="data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22400%22 height=%22300%22><rect width=%22400%22 height=%22300%22 fill=%22%231a1a2e%22 stroke=%22%23d4a017%22 stroke-width=%223%22/><text x=%22200%22 y=%22140%22 text-anchor=%22middle%22 fill=%22%23d4a017%22 font-size=%2248%22>🔍</text><text x=%22200%22 y=%22190%22 text-anchor=%22middle%22 fill=%22%23959a9e%22 font-size=%2216%22>线索示意图</text></svg>" alt="${alt}">`;
+}
+
+const ROOM_ITEMS = {
+  entrance: [
+    { key: 'painting', name: '???', hint: '油画背后似乎藏着什么...', act: 1 },
+    { key: 'vase_fragments', name: '???', hint: '角落散落着花瓶碎片...', act: 1 },
+    { key: 'visitor_log', name: '???', hint: '前台有一本访客登记本...', act: 1 },
+    { key: 'power_outage', name: '???', hint: '控制面板上的日志...', act: 1 },
+    { key: 'entrance_fiber', name: '???', hint: '门把手缝隙中有纤维...', act: 1 },
+    { key: 'clock_stopped', name: '???', hint: '墙上的挂钟停摆了...', act: 1 },
+    { key: 'emergency_exit_act1', name: '???', hint: '紧急出口的门锁似乎有问题...', act: 1 },
+    { key: 'visitor_log_act2', name: '???', hint: '再次翻看登记本...', act: 2 },
+    { key: 'chen_work_log', name: '???', hint: '保安室的日志本...', act: 3 },
+    { key: 'hidden_secret_key_found', name: '???', hint: '用放大镜检查那枚钥匙...', act: 3 },
+    { key: 'usb_drive', name: '???', hint: '门禁系统旁有一个USB接口...', act: 4 },
+    { key: 'emergency_exit', name: '???', hint: '重新调查紧急出口...', act: 4 }
+  ],
+  lab: [
+    { key: 'lab_notebook', name: '???', hint: '桌上的一本笔记', act: 1 },
+    { key: 'microscope_slide', name: '???', hint: '显微镜旁的载玻片', act: 1 },
+    { key: 'floor_marks', name: '???', hint: '实验台到门口的地面...', act: 1 },
+    { key: 'reagent_shelf', name: '???', hint: '试剂架一片凌乱...', act: 1 },
+    { key: 'trash_paper', name: '???', hint: '实验台下的垃圾桶里有碎纸...', act: 1 },
+    { key: 'chemical_bucket', name: '???', hint: '废料桶里似乎有什么...', act: 1 },
+    { key: 'lab_coat', name: '???', hint: '挂在角落的白大褂', act: 1 },
+    { key: 'mud_footprint', name: '???', hint: '实验室门口有泥脚印...', act: 1 },
+    { key: 'hidden_phone_act1', name: '???', hint: '实验台夹层中有什么...', act: 1 },
+    { key: 'hidden_lins_threat', name: '???', hint: '手机相册中有缓存文件...', act: 2 },
+    { key: 'blood_rag', name: '???', hint: '操作台下面藏着什么...', act: 3 },
+    { key: 'shoe_print', name: '???', hint: '角落地板上有泥印...', act: 3 },
+    { key: 'glove_dna', name: '???', hint: '对废料桶手套做DNA检测...', act: 4 }
+  ],
+  library: [
+    { key: 'letter1', name: '???', hint: '书桌上的信件', act: 2 },
+    { key: 'letter2', name: '???', hint: '另一封信件', act: 2 },
+    { key: 'phone_record', name: '???', hint: '书房的座机屏幕还亮着...', act: 2 },
+    { key: 'su_resume', name: '???', hint: '桌上的一份简历...', act: 2 },
+    { key: 'fang_contract', name: '???', hint: '书架夹层中的文件...', act: 2 },
+    { key: 'zhou_notes', name: '???', hint: '法律便笺本上的记录...', act: 2 },
+    { key: 'hidden_notebook_act2', name: '???', hint: '书架缝隙中似乎有什么...', act: 2 },
+    { key: 'anonymous_letter', name: '???', hint: '书架后面藏着信...', act: 3 },
+    { key: 'partnership', name: '???', hint: '书桌暗格中的文件...', act: 4 },
+    { key: 'research_funding', name: '???', hint: '一本旧书中夹着复印件...', act: 4 },
+    { key: 'zhou_statement', name: '???', hint: '桌上的便签...', act: 4 },
+    { key: 'hidden_card_act4', name: '???', hint: '地毯下面似乎有什么...', act: 4 }
+  ],
+  kitchen: [
+    { key: 'cup', name: '???', hint: '水槽中的高脚杯', act: 2 },
+    { key: 'broken_bottle', name: '???', hint: '水槽边的碎瓶子', act: 2 },
+    { key: 'wine_bottle', name: '???', hint: '吧台上的红酒瓶...', act: 2 },
+    { key: 'scale_powder', name: '???', hint: '角落的电子秤上似乎有粉末...', act: 2 },
+    { key: 'kitchen_glove', name: '???', hint: '水槽下柜子里有手套...', act: 2 },
+    { key: 'wine_residue', name: '???', hint: '对红酒瓶进行法医检测...', act: 4 }
+  ],
+  bedroom: [
+    { key: 'diary', name: '???', hint: '床头柜上的日记本', act: 2 },
+    { key: 'pill_bottle', name: '???', hint: '床头柜抽屉里有一个空药瓶...', act: 2 },
+    { key: 'faded_photo', name: '???', hint: '抽屉深处有什么...', act: 2 },
+    { key: 'window_scratch', name: '???', hint: '窗户锁扣处有痕迹...', act: 2 },
+    { key: 'pill_bottle_act3', name: '???', hint: '重新检查那个空药瓶...', act: 3 },
+    { key: 'bedroom_note', name: '???', hint: '枕头下面似乎有什么...', act: 4 },
+    { key: 'su_medical', name: '???', hint: '保险柜里还有一份文件...', act: 4 },
+    { key: 'chen_truth', name: '???', hint: '主卧深处有一本日记...', act: 4 }
+  ],
+  bathroom: [
+    { key: 'mirror_message', name: '???', hint: '镜子上的潦草字迹', act: 3 },
+    { key: 'medicine_box', name: '???', hint: '被翻乱的医药箱', act: 3 },
+    { key: 'vent_papers', name: '???', hint: '天花板通风口的一颗螺丝松了...', act: 3 },
+    { key: 'blood_trail', name: '???', hint: '浴缸边缘有几滴干涸的痕迹...', act: 3 },
+    { key: 'su_bag', name: '???', hint: '储物柜里的一个背包...', act: 3 },
+    { key: 'hidden_phone_act3', name: '???', hint: '水箱盖似乎被动过...', act: 3 },
+    { key: 'su_last_note', name: '???', hint: '背包内层有纸条...', act: 4 }
+  ],
+  garage: [
+    { key: 'hammer_visible', name: '???', hint: '工具架上少了一把锤子...', act: 1 },
+    { key: 'surveillance', name: '???', hint: '墙角的监控摄像头还在工作', act: 3 },
+    { key: 'hammer', name: '???', hint: '轿车后备箱里...', act: 3 },
+    { key: 'safe_note', name: '???', hint: '废旧纸箱中的说明书...', act: 3 },
+    { key: 'torn_photo', name: '???', hint: '垃圾桶里有被撕碎的照片...', act: 3 },
+    { key: 'wiring', name: '???', hint: '配电箱的门被撬过...', act: 3 },
+    { key: 'wire_cut', name: '???', hint: '监控摄像头的信号线被剪断了...', act: 3 },
+    { key: 'confession_letter', name: '???', hint: '墙上的保险箱（需要密码）', act: 4 },
+    { key: 'autopsy_report', name: '???', hint: '工具箱暗格中有文件...', act: 4 },
+    { key: 'fang_last_entry', name: '???', hint: '赵强的手机备忘录...', act: 4 }
+  ],
+  secret_room: [
+    { key: 'computer_files', name: '???', hint: '电脑屏幕还亮着...', act: 4 },
+    { key: 'email_draft', name: '???', hint: '收件箱里有一封草稿...', act: 4 },
+    { key: 'hidden_twist_reveal', name: '???', hint: '电脑中有隐藏文件夹...', act: 4 }
+  ]
+};
+
+// ============================================================
+// LOBBY
+// ============================================================
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+function toggleJoin() {
+  const s = document.getElementById('joinSection');
+  s.style.display = s.style.display === 'none' ? 'block' : 'none';
+}
+
+function createRoom() {
+  const name = document.getElementById('playerName').value.trim();
+  if (!name) return showError('请输入昵称');
+  socket.emit('create-room', (res) => {
+    if (res.success) {
+      roomCode = res.roomCode;
+      socket.emit('join-room', roomCode, name, (r) => {
+        if (r.success) {
+          enterWaitingRoom(roomCode);
+        } else {
+          showError(r.error);
+        }
+      });
+    }
+  });
+}
+
+function joinRoom() {
+  const name = document.getElementById('playerName').value.trim();
+  const code = document.getElementById('roomCode').value.trim();
+  if (!name) return showError('请输入昵称');
+  if (!code) return showError('请输入房间代码');
+  socket.emit('join-room', code, name, (res) => {
+    if (res.success) {
+      roomCode = res.roomCode;
+      enterWaitingRoom(roomCode);
+    } else {
+      showError(res.error);
+    }
+  });
+}
+
+function startSolo() {
+  const nameEl = document.getElementById('playerName');
+  const name = nameEl.value.trim();
+  if (!name) {
+    nameEl.value = '侦探';
+  }
+  const finalName = nameEl.value.trim() || '侦探';
+  socket.emit('start-solo', finalName, (res) => {
+    if (res.success) {
+      roomCode = res.roomCode;
+      showScreen('game');
+      addSystemMsg('🎮 单人模式已启动！');
+    } else {
+      showError('启动单人模式失败');
+    }
+  });
+}
+
+function showError(msg) {
+  document.getElementById('lobbyError').textContent = msg;
+  setTimeout(() => document.getElementById('lobbyError').textContent = '', 4000);
+}
+
+// ============================================================
+// WAITING ROOM
+// ============================================================
+function enterWaitingRoom(code) {
+  roomCode = code;
+  document.getElementById('roomCodeLabel').textContent = code;
+  document.getElementById('roomCodeBig').textContent = code;
+  showScreen('waiting');
+}
+
+function startGame() {
+  socket.emit('start-game');
+  AudioManager.playSFX('game_start');
+  setTimeout(() => AudioManager.startBGM(), 2000);
+}
+
+// ============================================================
+// SOCKET EVENTS
+// ============================================================
+socket.on('room-info', () => {});
+
+socket.on('game-state', (state) => {
+  gamePhase = state.phase;
+  allPlayers = state.players;
+  lastGameState = state;
+  globalFoundClues = state.foundClues || [];
+  globalDestroyedItems = state.destroyedItems || [];
+  // Sync shared clues from server state
+  if (state.sharedClueKeys) {
+    state.sharedClueKeys.forEach(k => {
+      if (!sharedClues.includes(k)) sharedClues.push(k);
+    });
+  }
+  // Sync inventory from server
+  if (state.myInventory) inventory = state.myInventory;
+  renderInventory();
+  // Re-render room view to reflect any shared/claimed clue changes
+  if (currentRoom && state.phase === 'explore') {
+    renderRoomView(currentRoom);
+  }
+
+  if (state.phase === 'waiting') {
+    renderWaitingPlayers(state);
+  }
+
+  if (state.phase === 'explore' || state.phase === 'dm_question' || state.phase === 'discuss' || state.phase === 'vote') {
+      document.getElementById('phaseBadge').textContent = {
+        explore: state.currentAct ? `探索 · 第${state.currentAct}幕` : '探索阶段',
+        dm_question: `DM提问 · 第${state.currentAct}幕`,
+        discuss: '讨论阶段',
+        vote: '投票阶段'
+      }[state.phase] || state.phase;
+
+    if (state.timerEnd) {
+      document.getElementById('headerTimer').style.display = 'block';
+      startTimer(state.timerEnd);
+    } else {
+      document.getElementById('headerTimer').style.display = 'none';
+      stopTimer();
+      hideProgressBar();
+    }
+  }
+
+  // Close act transition overlay when no longer waiting
+  if (state.phase !== 'act_transition') {
+    document.getElementById('actTransitionOverlay').classList.remove('active');
+  }
+
+  // Phase transition banners
+  if (state.phase === 'explore') {
+    document.getElementById('characterOverlay').classList.remove('active');
+    if (!roomEntered) { roomEntered = true; enterRoom('entrance'); }
+    showPhaseBanner('探索阶段', '#2980b9');
+  } else if (state.phase === 'discuss') {
+    showPhaseBanner('讨论阶段', '#d4a017');
+  } else if (state.phase === 'vote') {
+    showPhaseBanner('投票阶段', '#c0392b');
+  } else if (state.phase === 'dm_question') {
+    showPhaseBanner('DM 提问', '#c0392b');
+  } else if (state.phase === 'character_intro') {
+    showPhaseBanner('角色介绍', '#8e44ad');
+  }
+
+  // Update ack counts on overlays
+  if (state.phase === 'story') {
+    const info = document.getElementById('storyAckInfo');
+    if (info && state.storyAcksTotal > 0) {
+      const voted = state.myStoryAcked;
+      info.textContent = `已确认 ${state.storyAcks}/${state.storyAcksTotal}${voted ? ' (你已确认)' : ''}`;
+    }
+  }
+
+  const charInfo = document.getElementById('charAckInfo');
+  if (charInfo && state.characterAcksTotal > 0) {
+    const voted = state.myCharacterAcked;
+    charInfo.textContent = `已了解 ${state.characterAcks}/${state.characterAcksTotal}${voted ? ' (你已了解)' : ''}`;
+  }
+
+  const actInfo = document.getElementById('actTransitionInfo');
+  if (actInfo && state.actTransitionAcksTotal > 0) {
+    const voted = state.myActTransitionAcked;
+    actInfo.textContent = `已就绪 ${state.actTransitionAcks}/${state.actTransitionAcksTotal}${voted ? ' (你已就绪)' : ''}`;
+  }
+
+  if (state.phase === 'waiting' || state.phase === 'reveal') {
+    hideProgressBar();
+  }
+});
+
+function renderWaitingPlayers(state) {
+  const container = document.getElementById('waitingPlayers');
+  let html = '';
+  for (let i = 0; i < 6; i++) {
+    const p = state.players[i];
+    if (p) {
+      html += `<div class="waiting-player-card filled">
+        <div class="avatar">${p.avatar || '?'}</div>
+        <div class="name">${p.name}</div>
+      </div>`;
+    } else {
+      html += `<div class="waiting-player-card">
+        <div class="avatar" style="opacity:0.3">?</div>
+        <div class="name">等待加入...</div>
+      </div>`;
+    }
+  }
+  container.innerHTML = html;
+  document.getElementById('startBtn').style.display = (state.players.length >= 4) ? '' : 'none';
+}
+
+// ========== STORY ==========
+socket.on('story-segment', (seg) => {
+  document.getElementById('storyTitle').textContent = seg.title;
+  document.getElementById('storyText').textContent = seg.text;
+  document.getElementById('storyAckBtn').disabled = false;
+  document.getElementById('storyAckBtn').style.opacity = '1';
+  document.getElementById('storyOverlay').classList.add('active');
+  AudioManager.playSFX('story_next');
+});
+
+socket.on('story-end', () => {
+  document.getElementById('storyOverlay').classList.remove('active');
+  roomEntered = false;
+  showScreen('game');
+});
+
+function storyAck() {
+  socket.emit('story-ack');
+  const btn = document.getElementById('storyAckBtn');
+  if (btn) { btn.disabled = true; btn.style.opacity = '0.5'; }
+}
+
+function characterAck() {
+  socket.emit('character-ack');
+  const btn = document.getElementById('charAckBtn');
+  if (btn) { btn.disabled = true; btn.style.opacity = '0.5'; }
+  // Start background music after the player acknowledges their character
+  AudioManager.ensureContext();
+  if (AudioManager.bgmEnabled) {
+    AudioManager.startBGM();
+  }
+}
+
+function actTransitionAck() {
+  socket.emit('act-transition-ack');
+  const btn = document.getElementById('actTransitionBtn');
+  if (btn) { btn.disabled = true; btn.style.opacity = '0.5'; }
+}
+
+// ========== CHARACTER ==========
+socket.on('character-assign', (data) => {
+  myPlayerId = data.playerId;
+  myCharacter = data.character;
+  // Find character index for avatar image
+  const charNames = ['曹文轩','林薇','张峰','苏婉清','赵强','周明远'];
+  const charIdx = charNames.indexOf(data.character.name);
+  const avatarImg = charIdx >= 0 ? `assets/characters/character_${charIdx}.jpg` : '';
+  myCharacter._avatarImg = avatarImg;
+  myCharacter._charIdx = charIdx;
+
+  // Update header avatar
+  document.getElementById('myCharacter').textContent = data.character.name;
+  document.getElementById('myAvatar').textContent = data.character.avatar;
+  const imgEl = document.getElementById('myAvatarImg');
+  if (avatarImg) {
+    imgEl.innerHTML = `<img class="header-avatar" src="${avatarImg}" alt="" onerror="this.parentElement.style.display='none'">`;
+    imgEl.style.display = '';
+    document.getElementById('myAvatar').style.display = 'none';
+  }
+
+  renderCharacterCard(data.character);
+  document.getElementById('characterOverlay').classList.add('active');
+  showTaskButton();
+});
+
+function renderCharacterCard(ch) {
+  const charNames = ['曹文轩','林薇','张峰','苏婉清','赵强','周明远'];
+  const cIdx = charNames.indexOf(ch.name);
+  const avatarImg = cIdx >= 0 ? `assets/characters/character_${cIdx}.jpg` : '';
+  const avatarHtml = avatarImg
+    ? `<img src="${avatarImg}" style="width:80px;height:80px;border-radius:50%;object-fit:cover;border:3px solid ${ch.color};margin-bottom:8px;" onerror="this.style.display='none'">`
+    : `<div class="char-avatar">${ch.avatar}</div>`;
+  document.getElementById('characterCard').innerHTML = `
+    <div class="char-header" style="text-align:center;">
+      ${avatarHtml}
+        <div class="char-name" style="color:${ch.color}">${ch.name}</div>
+      <div class="char-title">${ch.title} · ${ch.role}</div>
+    </div>
+    <div class="char-section section-backstory">
+      <h3>你的故事</h3>
+      <p>${ch.backstory}</p>
+    </div>
+    <div class="char-section section-secret">
+      <h3>你的秘密</h3>
+      <p>${ch.secret}</p>
+    </div>
+    <div class="char-section section-goal">
+      <h3>你的目标</h3>
+      <p>${ch.goal}</p>
+    </div>
+  `;
+}
+
+function closeCharacter() {
+  document.getElementById('characterOverlay').classList.remove('active');
+  enterRoom('entrance');
+}
+
+// ========== ROOM EXPLORATION ==========
+function enterRoom(roomKey) {
+  currentRoom = roomKey;
+  socket.emit('move-room', roomKey);
+  renderRoomView(roomKey);
+}
+
+socket.on('room-enter', (data) => {
+  currentRoom = data.room;
+  renderRoomView(data.room, data.playersHere, data.roomData?.desc || '');
+  AudioManager.playSFX('room_enter');
+  animateRoomContent();
+});
+
+socket.on('player-enter-room', () => {});
+socket.on('player-leave-room', () => {});
+
+function renderBuildingMap(currentRoomKey) {
+  const currentRoom = ROOMS[currentRoomKey];
+  const currentName = currentRoom ? currentRoom.name : '';
+  return `<button class="map-btn" onclick="showBuildingMap('${currentRoomKey}')">
+    <span class="map-btn-icon">🗺️</span>
+    <span>楼层示意图</span>
+    <span class="map-btn-current">📍 ${currentName}</span>
+  </button>`;
+}
+
+function showBuildingMap(currentRoomKey) {
+  const hasSecretKey = inventory.includes('secret_room_key');
+  const inSecretRoom = currentRoomKey === 'secret_room';
+  const secretDiscovered = hasSecretKey || inSecretRoom;
+
+  const layout = [
+    ['lab', 'library', 'bedroom'],
+    ['bathroom', 'entrance', 'kitchen'],
+    ['garage', null, 'secret_room']
+  ];
+
+  let html = `<div class="building-map">
+    <div class="building-map-title">🏛️ 研究所 · 楼层示意</div>
+    <div class="building-map-subtitle">金色高亮为你当前所在位置</div>
+    <div class="map-grid">`;
+
+  layout.forEach(row => {
+    row.forEach(rk => {
+      if (!rk) {
+        html += `<div class="map-empty"></div>`;
+        return;
+      }
+      const r = ROOMS[rk];
+      if (!r) { html += `<div class="map-empty"></div>`; return; }
+
+      const isCurrent = rk === currentRoomKey;
+      const isSecret = rk === 'secret_room';
+
+      let cls = 'map-room';
+      if (isCurrent) cls += ' current';
+      if (isSecret) {
+        cls += ' secret';
+        if (!secretDiscovered) cls += ' locked';
+      }
+
+      const displayIcon = (isSecret && !secretDiscovered) ? '🔒' : r.icon;
+      const displayName = (isSecret && !secretDiscovered) ? '???' : r.name;
+
+      html += `<div class="${cls}">
+        <span class="map-icon">${displayIcon}</span>
+        <span class="map-name">${displayName}</span>
+      </div>`;
+    });
+  });
+
+  html += `</div>`;
+  html += `<div class="modal-actions">
+    <button class="btn btn-gold" onclick="closePuzzle()">关闭</button>
+  </div></div>`;
+  openPuzzle(html);
+}
+
+function renderRoomView(roomKey, playersHere, serverDesc) {
+  const room = ROOMS[roomKey];
+  if (!room) return;
+  // Filter items by current act
+  const currentAct = getCurrentAct();
+  const items = (ROOM_ITEMS[roomKey] || []).filter(item => !item.act || item.act <= currentAct);
+  const hasSecretKey = inventory.includes('secret_room_key');
+  const visibleConnects = (room.connects || []).filter(r => {
+    if (r === 'secret_room' && !hasSecretKey) return false;
+    return true;
+  });
+
+  const descText = serverDesc || '';
+
+  let html = `<div class="room-view">
+    <div class="room-scene-banner">
+      <img src="${room.img}" alt="${room.name}" onerror="this.parentElement.style.display='none'">
+      <div class="scene-overlay">
+        <h2>${room.icon} ${room.name}</h2>
+        <div class="scene-subtitle">${descText || '仔细搜索这个房间，寻找隐藏的线索'}</div>
+      </div>
+    </div>`;
+
+  if (descText) {
+    html += `<div class="room-desc">${descText}</div>`;
+  }
+
+  if (playersHere && playersHere.length > 0) {
+    html += `<div class="room-players">${playersHere.map(p =>
+      `<span class="room-player-tag">${p.avatar} ${p.name}</span>`
+    ).join('')}</div>`;
+  }
+
+  if (items.length > 0) {
+    html += `<div class="room-items-title">可调查的物品</div>`;
+
+    // Special: corpse examination button (lab, act 1) — always visible, not a clue
+    if (roomKey === 'lab' && currentAct >= 1) {
+      html += `<button class="room-item-btn corpse-btn" onclick="examineBody()">
+        <div class="item-thumb" style="background:rgba(231,76,60,0.1);display:flex;align-items:center;justify-content:center;font-size:28px;">💀</div>
+        <div>
+          <div class="item-label">调查尸体</div>
+          <div class="item-hint">陈默的尸体倒在实验台旁，皮肤呈樱桃红色...</div>
+        </div>
+      </button>`;
+    }
+
+    items.forEach(item => {
+      const found = inventory.includes(item.key);
+      const destroyed = globalDestroyedItems.includes(item.key);
+      const claimed = globalFoundClues.includes(item.key) && !found;
+      const isShared = sharedClues.includes(item.key);
+      // Show real name/desc/image only if: found by self OR publicly shared
+      const showDetails = found || isShared;
+      const clueData = CLUE_ITEM_DATA[item.key] || null;
+      const realName = clueData ? clueData.name : item.name;
+      const realDesc = clueData ? clueData.desc : item.hint;
+      const displayName = showDetails ? realName : '???';
+      const displayHint = showDetails ? item.hint : '未知线索';
+      const thumbSrc = showDetails ? (CLUE_IMAGES[item.key] || '') : '';
+      const thumbHtml = thumbSrc ? `<div class="item-thumb"><img src="${thumbSrc}" alt="" onerror="this.parentElement.style.display='none'"></div>` : '';
+
+      if (destroyed) {
+        // Destroyed - show as destroyed and non-interactive
+        html += `<button class="room-item-btn destroyed" disabled>
+          <div>
+            <div class="item-label">🔥 已销毁</div>
+            <div class="item-hint">此线索已被销毁</div>
+          </div>
+        </button>`;
+        return;
+      }
+      if (claimed && !isShared) {
+        // Other player claimed and NOT shared - show generic "???" only
+        html += `<button class="room-item-btn claimed" disabled>
+          <div>
+            <div class="item-label">???</div>
+            <div class="item-hint">已被其他玩家获取</div>
+          </div>
+        </button>`;
+        return;
+      }
+      // If claimed but shared, show real details but non-interactive
+      if (claimed && isShared) {
+        html += `<button class="room-item-btn claimed" disabled>
+          ${thumbHtml}
+          <div>
+            <div class="item-label">${displayName}</div>
+            <div class="item-hint">${displayHint}</div>
+          </div>
+        </button>`;
+        return;
+      }
+      html += `<button class="room-item-btn ${found ? 'found' : ''}" onclick="examineItem('${item.key}')">
+        ${thumbHtml}
+        <div>
+          <div class="item-label">${found ? displayName + ' ✓' : displayName}</div>
+          <div class="item-hint">${displayHint}</div>
+        </div>
+      </button>`;
+    });
+  }
+
+  html += `<div class="room-items-title" style="margin-top:16px;">移动到其他房间</div>`;
+  html += `<div class="room-nav">`;
+  visibleConnects.forEach(r => {
+    const rm = ROOMS[r];
+    if (!rm) return;
+    const isCurrent = r === roomKey;
+    html += `<button class="room-nav-btn ${isCurrent ? 'current' : ''}" onclick="enterRoom('${r}')">
+      ${rm.icon} ${rm.name}
+    </button>`;
+  });
+  html += `</div>`;
+
+  html += renderBuildingMap(roomKey);
+
+  html += `</div>`;
+
+  document.getElementById('gameContent').innerHTML = html;
+
+  // Update room description from server data
+  socket.emit('move-room', roomKey);
+
+  // Ensure scrolling works by forcing height recalculation
+  ensureScrolling();
+}
+
+// Delegated ripple handler for room items and nav buttons
+document.getElementById('gameContent').addEventListener('click', (e) => {
+  const target = e.target.closest('.room-item-btn:not(.found)') || e.target.closest('.room-nav-btn:not(.current)');
+  if (target) addRipple(e);
+});
+
+function examineItem(key) {
+  if (inventory.includes(key)) return;
+  socket.emit('examine-item', key);
+}
+
+// Special: examine the corpse — always available, shows a modal with body details
+function examineBody() {
+  const bodyDesc = '陈默仰面倒在实验台旁的地板上，面色灰白，嘴唇微张。皮肤略显异常的红润，但无法直接判断原因。后颈有一处不明显的淤青，大小约3厘米。右手紧握成拳，指甲缝中嵌有微量蓝色棉质纤维——似乎在与什么搏斗的过程中攥住的。左手手掌摊开，手心有一道浅红色摩擦痕，像是曾经握住某物后被迅速夺走留下的。制服左胸口袋被翻过，内衬外翻。裤脚和鞋底有明显的尘土痕迹。';
+  const imgHtml = `<img class="clue-modal-image clue-pop" src="assets/corpsescene/body.jpg" alt="尸体示意图">`;
+  const html = `${imgHtml}<h3>💀 陈默的尸体</h3>
+    <p class="clue-pop">${bodyDesc}</p>
+    <div style="padding:8px;background:rgba(231,76,60,0.1);border-radius:8px;margin-bottom:12px;font-size:13px;color:var(--text-secondary);">
+      ⚠️ 注意：检查尸体口袋和鞋底可能发现额外线索。你可以在聊天中输入相关信息来触发调查。
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-gold" onclick="closePuzzle()">关闭</button>
+    </div>`;
+  openPuzzle(html);
+}
+
+socket.on('item-found', (data) => {
+  inventory.push(data.itemKey);
+  AudioManager.playSFX('item_found');
+  addSystemMsg(`发现线索：${data.item.name}`);
+  renderInventory();
+  sparkleCenter(16);
+  showItemFoundModal(data.item, data.itemKey);
+  // Refresh room view
+  renderRoomView(currentRoom);
+});
+
+socket.on('hidden-clue-found', (data) => {
+  inventory.push(data.itemKey);
+  AudioManager.playSFX('item_found');
+  addSystemMsg(`💫 隐藏线索触发：${data.item.name}`);
+  renderInventory();
+  renderRoomView(currentRoom);
+  showItemFoundModal(data.item, data.itemKey);
+});
+
+socket.on('clue-limit', (data) => {
+  showClueLimitNotice(data.maxClues, data.currentActClueCount);
+});
+
+socket.on('clue-taken', (data) => {
+  showClueTakenNotice(data.itemName, data.finderName);
+});
+
+function showClueLimitNotice(maxClues, currentActClueCount) {
+  const list = document.getElementById('inventoryList');
+  if (!list) return;
+
+  // Remove any existing notice
+  const existing = list.querySelector('.clue-limit-notice');
+  if (existing) existing.remove();
+
+  // Create the notice element
+  const notice = document.createElement('div');
+  notice.className = 'clue-limit-notice';
+  notice.innerHTML = `
+    <div class="notice-title">⚠️ 本幕线索已达上限</div>
+    <div>你已获取 ${currentActClueCount}/${maxClues} 条线索，本幕无法继续获取。</div>
+    <div class="notice-hint">请通过交流与其他玩家分享线索，或等待下一幕开始后重置。</div>
+  `;
+
+  // Insert at the top of the inventory list
+  list.insertBefore(notice, list.firstChild);
+
+  // Auto-remove after 8 seconds
+  setTimeout(() => {
+    if (notice && notice.parentNode) {
+      notice.style.transition = 'opacity 0.4s';
+      notice.style.opacity = '0';
+      setTimeout(() => notice.remove(), 400);
+    }
+  }, 8000);
+
+  // Switch to inventory panel
+  switchTab('inventory');
+}
+
+function showClueTakenNotice(itemName, finderName) {
+  const list = document.getElementById('inventoryList');
+  if (!list) return;
+
+  // Remove any existing taken notice
+  const existing = list.querySelector('.clue-taken-notice');
+  if (existing) existing.remove();
+
+  const notice = document.createElement('div');
+  notice.className = 'clue-taken-notice';
+  notice.innerHTML = `
+    <div class="notice-title">🔒 线索已被获取</div>
+    <div class="notice-body">「${escapeHtml(itemName)}」已被 <b>${escapeHtml(finderName)}</b> 获取。</div>
+    <div class="notice-hint">请通过聊天交流向对方询问该线索的详细信息。</div>
+  `;
+
+  list.insertBefore(notice, list.firstChild);
+
+  setTimeout(() => {
+    if (notice && notice.parentNode) {
+      notice.style.transition = 'opacity 0.4s';
+      notice.style.opacity = '0';
+      setTimeout(() => notice.remove(), 400);
+    }
+  }, 8000);
+
+  switchTab('inventory');
+}
+
+function showItemFoundModal(item, itemKey) {
+  const key = itemKey || item.key;
+  const imgHtml = getClueImageHtml(key, item.name);
+  let html = `${imgHtml}<h3>🔍 ${item.name}</h3>
+    <p class="clue-pop">${item.desc}</p>`;
+  if (item.keyItem) {
+    html += `<div style="padding:8px;background:rgba(212,160,23,0.1);border-radius:8px;margin-bottom:16px;font-size:13px;color:var(--accent-gold);">
+      🗝️ 获得了特殊物品！
+    </div>`;
+  }
+  html += `<div class="modal-actions">
+    <button class="btn btn-gold" onclick="closePuzzle()">收下线索</button>
+    <button class="btn btn-outline" onclick="closePuzzle();openShareModal('${key}')">分享给他人</button>
+  </div>`;
+  openPuzzle(html);
+}
+
+// ========== PUZZLES ==========
+socket.on('puzzle-trigger', (data) => {
+  let html = `<h3>🔐 ${data.puzzle.name}</h3>
+    <p>${data.puzzle.prompt}</p>
+    <div class="input-group">
+      <input type="text" id="puzzleAnswer" placeholder="输入答案..." style="width:100%;padding:12px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;color:var(--text-primary);font-size:16px;text-align:center;letter-spacing:8px;" maxlength="10" autocomplete="off">
+    </div>
+    <div class="modal-actions" style="display:flex;gap:8px;flex-wrap:wrap;">
+      <button class="btn btn-gold" onclick="solvePuzzle('${data.puzzleKey}')">确认</button>
+      <button class="btn btn-outline" onclick="requestHint('${data.puzzleKey}',1)">提示1</button>
+      <button class="btn btn-outline" onclick="requestHint('${data.puzzleKey}',2)">提示2</button>
+      <button class="btn btn-outline" onclick="closePuzzle()">取消</button>
+    </div>`;
+  openPuzzle(html);
+});
+
+function solvePuzzle(key) {
+  const answer = document.getElementById('puzzleAnswer').value;
+  socket.emit('solve-puzzle', key, answer);
+}
+
+socket.on('puzzle-result', (data) => {
+  if (data.success) {
+    AudioManager.playSFX('puzzle_solve');
+    sparkleCenter(20);
+    // Server now manages inventory; request state sync
+    socket.emit('request-state');
+    let html = `<h3 style="color:var(--accent-green)">✅ 解谜成功！</h3>
+      <p>${data.message}</p>
+      <div class="modal-actions">
+        <button class="btn btn-gold" onclick="closePuzzle()">确定</button>
+      </div>`;
+    openPuzzle(html);
+  } else {
+    AudioManager.playSFX('puzzle_fail');
+    let html = `<h3 style="color:var(--accent-red)">❌ ${data.message}</h3>
+      <div class="modal-actions">
+        <button class="btn btn-outline" onclick="closePuzzle()">关闭</button>
+      </div>`;
+    openPuzzle(html);
+  }
+});
+
+socket.on('hint', (data) => {
+  addSystemMsg(`💡 提示：${data.text}`);
+});
+
+function requestHint(key, level) {
+  socket.emit('request-hint', key, level);
+}
+
+function openPuzzle(html) {
+  document.getElementById('puzzleContent').innerHTML = html;
+  document.getElementById('puzzleModal').classList.add('active');
+}
+
+function closePuzzle() {
+  document.getElementById('puzzleModal').classList.remove('active');
+}
+
+// ========== SCROLLING FIX ==========
+function ensureScrolling() {
+  const content = document.getElementById('gameContent');
+  const main = document.querySelector('.game-main');
+  if (!content || !main) return;
+
+  // Force a layout recalculation
+  content.style.display = 'none';
+  void content.offsetHeight; // trigger reflow
+  content.style.display = '';
+
+  // Explicitly constrain height from parent
+  const mainRect = main.getBoundingClientRect();
+  let availableHeight = mainRect.height;
+  const taskBar = document.getElementById('taskBar');
+  const actions = document.getElementById('gameActions');
+  if (taskBar && taskBar.style.display !== 'none') availableHeight -= taskBar.offsetHeight;
+  if (actions && actions.offsetHeight) availableHeight -= actions.offsetHeight;
+  if (availableHeight > 0) {
+    content.style.maxHeight = availableHeight + 'px';
+  }
+  updateGameScrollThumb();
+}
+
+// ========== CUSTOM SCROLLBAR ==========
+const gameContentEl = document.getElementById('gameContent');
+const gameScrollThumb = document.getElementById('gameScrollThumb');
+const gameScrollTrack = document.getElementById('gameScrollTrack');
+
+function updateGameScrollThumb() {
+  const content = document.getElementById('gameContent');
+  const thumb = document.getElementById('gameScrollThumb');
+  const track = document.getElementById('gameScrollTrack');
+  if (!content || !thumb || !track) return;
+
+  const trackHeight = track.clientHeight;
+  const { scrollHeight, clientHeight, scrollTop } = content;
+
+  if (scrollHeight <= clientHeight + 2) {
+    thumb.style.display = 'none';
+    return;
+  }
+  thumb.style.display = '';
+
+  const thumbHeight = Math.max(30, (clientHeight / scrollHeight) * trackHeight);
+  const maxScroll = scrollHeight - clientHeight;
+  const topRatio = maxScroll > 0 ? scrollTop / maxScroll : 0;
+  const thumbTop = topRatio * (trackHeight - thumbHeight);
+
+  thumb.style.height = thumbHeight + 'px';
+  thumb.style.top = thumbTop + 'px';
+}
+
+if (gameContentEl) {
+  gameContentEl.addEventListener('scroll', updateGameScrollThumb);
+  gameContentEl.addEventListener('input', updateGameScrollThumb);
+}
+
+// Mouse wheel support — listen on the entire game-main area so wheel works
+// even when hovering over the scroll track or edges of the content
+if (gameContentEl) {
+  const gameMainForWheel = document.querySelector('.game-main');
+  const wheelTarget = gameMainForWheel || gameContentEl;
+  wheelTarget.addEventListener('wheel', (e) => {
+    const content = gameContentEl;
+    const maxScroll = content.scrollHeight - content.clientHeight;
+    if (maxScroll <= 0) return;
+    // Let the browser handle native scroll, but ensure it doesn't bubble to page
+    e.preventDefault();
+    // Determine scroll delta (normalize for different browsers)
+    let delta = e.deltaY;
+    if (e.deltaMode === 1) delta *= 16;      // lines -> pixels
+    else if (e.deltaMode === 2) delta *= content.clientHeight; // pages -> pixels
+    content.scrollTop += delta;
+  }, { passive: false });
+}
+
+if (gameScrollTrack) {
+  gameScrollTrack.addEventListener('mouseenter', updateGameScrollThumb);
+}
+
+// Drag the thumb to scroll
+if (gameScrollThumb && gameContentEl) {
+  let isDragging = false;
+  let dragStartY = 0;
+  let dragStartScroll = 0;
+
+  gameScrollThumb.addEventListener('mousedown', (e) => {
+    isDragging = true;
+    dragStartY = e.clientY;
+    dragStartScroll = gameContentEl.scrollTop;
+    gameScrollThumb.classList.add('dragging');
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!isDragging) return;
+    const content = gameContentEl;
+    const track = document.getElementById('gameScrollTrack');
+    const trackHeight = track.clientHeight;
+    const thumbHeight = gameScrollThumb.offsetHeight;
+    const maxThumbTop = trackHeight - thumbHeight;
+    const deltaY = e.clientY - dragStartY;
+    const maxScroll = content.scrollHeight - content.clientHeight;
+    const scrollDelta = (deltaY / Math.max(1, maxThumbTop)) * maxScroll;
+    content.scrollTop = dragStartScroll + scrollDelta;
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (isDragging) {
+      isDragging = false;
+      gameScrollThumb.classList.remove('dragging');
+    }
+  });
+
+  // Touch support
+  gameScrollThumb.addEventListener('touchstart', (e) => {
+    isDragging = true;
+    dragStartY = e.touches[0].clientY;
+    dragStartScroll = gameContentEl.scrollTop;
+    gameScrollThumb.classList.add('dragging');
+  }, { passive: true });
+
+  document.addEventListener('touchmove', (e) => {
+    if (!isDragging) return;
+    const content = gameContentEl;
+    const track = document.getElementById('gameScrollTrack');
+    const trackHeight = track.clientHeight;
+    const thumbHeight = gameScrollThumb.offsetHeight;
+    const maxThumbTop = trackHeight - thumbHeight;
+    const deltaY = e.touches[0].clientY - dragStartY;
+    const maxScroll = content.scrollHeight - content.clientHeight;
+    const scrollDelta = (deltaY / Math.max(1, maxThumbTop)) * maxScroll;
+    content.scrollTop = dragStartScroll + scrollDelta;
+  }, { passive: true });
+
+  document.addEventListener('touchend', () => {
+    if (isDragging) {
+      isDragging = false;
+      gameScrollThumb.classList.remove('dragging');
+    }
+  });
+}
+
+// Update thumb on content changes via MutationObserver
+const gameContentObserver = new MutationObserver(() => {
+  requestAnimationFrame(updateGameScrollThumb);
+});
+if (gameContentEl) {
+  gameContentObserver.observe(gameContentEl, { childList: true, subtree: true });
+}
+
+// Observe game-main size changes to keep scrolling working
+const gameMainObserver = new ResizeObserver(() => {
+  if (gamePhase !== 'waiting') ensureScrolling();
+});
+const gameMainEl = document.querySelector('.game-main');
+if (gameMainEl) gameMainObserver.observe(gameMainEl);
+
+// ========== SHARE CLUE ==========
+function destroyClue(itemKey) {
+  socket.emit('destroy-clue', itemKey);
+  closeShareModal();
+  AudioManager.playSFX('vote_cast');
+}
+
+function openShareModal(itemKey) {
+  let html = `<h3>📜 分享线索</h3>
+    <p>选择分享对象：</p>
+    <div class="share-options">
+      <button class="share-option" onclick="shareClue('${itemKey}', -1)">📢 向所有人展示</button>`;
+  allPlayers.forEach((p, i) => {
+    if (i !== myPlayerId && p.connected) {
+      html += `<button class="share-option" onclick="shareClue('${itemKey}', ${i})">${p.avatar} 私密分享给 ${p.character}</button>`;
+    }
+  });
+  html += `</div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeShareModal()">取消</button>
+    </div>`;
+  document.getElementById('shareContent').innerHTML = html;
+  document.getElementById('shareModal').classList.add('active');
+}
+
+function shareClue(itemKey, targetIdx) {
+  socket.emit('share-clue', itemKey, targetIdx);
+  closeShareModal();
+}
+
+function closeShareModal() {
+  document.getElementById('shareModal').classList.remove('active');
+}
+
+socket.on('clue-shared', (data) => {
+  const msg = document.createElement('div');
+  msg.className = 'chat-msg clue-shared clickable';
+  msg.innerHTML = `${data.private ? '<span style="color:var(--accent-purple);font-size:11px;">[私密分享]</span><br>' : ''}
+    <div class="clue-title">📜 ${data.fromCharacter} 展示了线索</div>
+    <div style="font-weight:700;margin-bottom:4px;">${data.item.name}</div>
+    <div style="color:var(--text-secondary);font-size:12px;">${data.item.desc}</div>
+    <div class="clue-click-hint">👆 点击查看详情</div>`;
+  msg.addEventListener('click', () => {
+    showClueDetailModal(data.itemKey, data.item, data.fromCharacter);
+  });
+  document.getElementById('chatMessages').appendChild(msg);
+  scrollChat();
+  AudioManager.playSFX('clue_shared');
+  highlightNewMessage(msg);
+
+  // Track publicly shared clues (non-private) for the inventory panel
+  if (!data.private && data.itemKey) {
+    if (!sharedClues.includes(data.itemKey)) {
+      sharedClues.push(data.itemKey);
+      renderInventory();
+    }
+  }
+  // Re-render room view to update item display
+  if (currentRoom) {
+    renderRoomView(currentRoom);
+  }
+});
+
+function showClueDetailModal(itemKey, item, fromCharacter) {
+  const imgHtml = getClueImageHtml(itemKey, item.name);
+  let html = `${imgHtml}<h3>📜 ${item.name}</h3>
+    <p class="clue-pop">${item.desc}</p>`;
+  if (fromCharacter) {
+    html += `<div style="padding:8px;background:rgba(39,174,96,0.1);border-radius:8px;margin-bottom:16px;font-size:13px;color:var(--accent-green);">
+      📋 由 ${fromCharacter} 分享
+    </div>`;
+  }
+  html += `<div class="modal-actions">
+    <button class="btn btn-gold" onclick="closePuzzle()">关闭</button>
+  </div>`;
+  openPuzzle(html);
+}
+
+// ========== CHAT ==========
+function sendChat() {
+  const input = document.getElementById('chatInput');
+  const msg = input.value.trim();
+  if (!msg) return;
+  socket.emit('chat-message', msg);
+  input.value = '';
+}
+
+document.getElementById('chatInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') sendChat();
+});
+
+socket.on('chat-message', (data) => {
+  const msg = document.createElement('div');
+  msg.className = 'chat-msg';
+  const charNames = ['曹文轩','林薇','张峰','苏婉清','赵强','周明远'];
+  const cIdx = charNames.indexOf(data.characterName);
+  const chatAvatarHtml = cIdx >= 0
+    ? `<img class="chat-avatar" src="assets/characters/character_${cIdx}.jpg" alt="" onerror="this.style.display='none'">`
+    : '';
+  msg.innerHTML = `${chatAvatarHtml}<span class="sender" style="color:${data.color}">${data.avatar} ${data.characterName}</span>${escapeHtml(data.text)}`;
+  document.getElementById('chatMessages').appendChild(msg);
+  scrollChat();
+  AudioManager.playSFX('chat_message');
+  highlightNewMessage(msg);
+});
+
+socket.on('system-message', (data) => {
+  addSystemMsg(data.text);
+  if (data.text && data.text.includes('加入了房间')) {
+    AudioManager.playSFX('player_join');
+  }
+});
+
+// ========== DM MESSAGES ==========
+socket.on('dm-message', (data) => {
+  const msg = document.createElement('div');
+  msg.className = 'chat-msg dm-msg';
+  msg.innerHTML = `<span class="dm-label">DM</span><img class="chat-avatar" src="assets/characters/dm_avatar.jpg" alt="" onerror="this.style.display='none'" style="border-color:var(--accent-gold)"><span class="sender">${data.avatar} ${data.characterName}</span>${escapeHtml(data.text)}`;
+  document.getElementById('chatMessages').appendChild(msg);
+  scrollChat();
+  AudioManager.playSFX('story_next');
+  highlightNewMessage(msg);
+});
+
+socket.on('act-start', (data) => {
+  showPhaseBanner(data.title, '#d4a017');
+  gamePhase = 'explore';
+});
+
+socket.on('act-transition', (data) => {
+  document.getElementById('actTransitionTitle').textContent = data.title;
+  document.getElementById('actTransitionBtn').disabled = false;
+  document.getElementById('actTransitionBtn').style.opacity = '1';
+  document.getElementById('actTransitionOverlay').classList.add('active');
+});
+
+socket.on('dm-question', (data) => {
+  document.getElementById('actTransitionOverlay').classList.remove('active');
+  gamePhase = 'dm_question';
+  showPhaseBanner('DM 提问时间', '#c0392b');
+  addSystemMsg(`🎭 ${data.question}`);
+});
+
+socket.on('dm-time-limit', (data) => {
+  showDMTimeLimitNotice(data.seconds);
+});
+
+let dmTimeLimitInterval = null;
+
+function showDMTimeLimitNotice(totalSeconds) {
+  // Remove any existing notice
+  const existing = document.getElementById('dmTimeLimitNotice');
+  if (existing) existing.remove();
+  if (dmTimeLimitInterval) clearInterval(dmTimeLimitInterval);
+
+  let remaining = totalSeconds;
+
+  // Create the notice element
+  const notice = document.createElement('div');
+  notice.id = 'dmTimeLimitNotice';
+  notice.className = 'dm-time-limit';
+  notice.innerHTML = `
+    <span class="timer-icon">⏰</span>
+    <span class="timer-label">你只剩下</span>
+    <span class="timer-num" id="dmTimerNum">${remaining}</span>
+    <span class="timer-label">秒的时间回答DM的问题</span>
+  `;
+  document.body.appendChild(notice);
+
+  // Start countdown
+  dmTimeLimitInterval = setInterval(() => {
+    remaining--;
+    const numEl = document.getElementById('dmTimerNum');
+    if (numEl) numEl.textContent = remaining;
+
+    // Turn urgent when <= 10 seconds
+    if (remaining <= 10 && remaining > 0) {
+      notice.classList.add('urgent');
+    }
+
+    if (remaining <= 0) {
+      clearInterval(dmTimeLimitInterval);
+      dmTimeLimitInterval = null;
+      notice.style.transition = 'opacity 0.4s';
+      notice.style.opacity = '0';
+      setTimeout(() => notice.remove(), 400);
+    }
+  }, 1000);
+}
+
+function endAct() {
+  socket.emit('end-act');
+  AudioManager.playSFX('vote_cast');
+  // Disable button immediately to prevent double-click
+  const btn = document.getElementById('endActBtn');
+  if (btn) { btn.disabled = true; btn.style.opacity = '0.5'; }
+}
+
+function addSystemMsg(text) {
+  const msg = document.createElement('div');
+  msg.className = 'chat-msg system';
+  msg.textContent = text;
+  document.getElementById('chatMessages').appendChild(msg);
+  scrollChat();
+}
+
+function scrollChat() {
+  const el = document.getElementById('chatMessages');
+  el.scrollTop = el.scrollHeight;
+}
+
+
+// ========== INVENTORY ==========
+// Act mapping for each clue key
+const CLUE_ACT_MAP = {
+  // Act 1
+  painting: 1, lab_notebook: 1, microscope_slide: 1, floor_marks: 1, hidden_note_act1: 1, hidden_phone_act1: 1,
+  vase_fragments: 1, visitor_log: 1, power_outage: 1, reagent_shelf: 1, trash_paper: 1, chemical_bucket: 1, lab_coat: 1,
+  hammer_visible: 1, entrance_fiber: 1, clock_stopped: 1, mud_footprint: 1, emergency_exit_act1: 1,
+  corpse_wallet: 1, corpse_shoes: 1,
+  // Act 2
+  letter1: 2, letter2: 2, diary: 2, cup: 2, hidden_notebook_act2: 2, hidden_lins_threat: 2,
+  wine_bottle: 2, scale_powder: 2, faded_photo: 2, window_scratch: 2, broken_bottle: 2, phone_record: 2, pill_bottle: 2,
+  visitor_log_act2: 2, su_resume: 2, fang_contract: 2, zhou_notes: 2, kitchen_glove: 2,
+  // Act 3
+  mirror_message: 3, medicine_box: 3, surveillance: 3, hammer: 3, safe_note: 3, blood_trail: 3,
+  hidden_phone_act3: 3, hidden_secret_key_found: 3,
+  blood_rag: 3, anonymous_letter: 3, vent_papers: 3, torn_photo: 3, shoe_print: 3,
+  pill_bottle_act3: 3, wiring: 3, chen_work_log: 3, su_bag: 3, wire_cut: 3,
+  // Act 4
+  partnership: 4, confession_letter: 4, computer_files: 4, usb_drive: 4, bedroom_note: 4,
+  hidden_card_act4: 4, hidden_twist_reveal: 4,
+  research_funding: 4, su_medical: 4, autopsy_report: 4, email_draft: 4, zhou_statement: 4, emergency_exit: 4,
+  wine_residue: 4, glove_dna: 4, su_last_note: 4, fang_last_entry: 4, chen_truth: 4,
+  // Special
+  secret_room_key: 1
+};
+const ACT_NAMES = { 1: '第一幕 · 案发现场', 2: '第二幕 · 各怀鬼胎', 3: '第三幕 · 隐藏的真相', 4: '第四幕 · 最终推理' };
+
+// Global clue data mapping (shared between inventory render and public clue detail)
+const CLUE_ITEM_DATA = {
+  // Act 1
+  painting: { name: '倒下的油画', desc: '玄关大厅墙上掉落的巨幅油画，画框一角严重受损。移开后发现墙壁有一个小暗格，内藏一把古铜色钥匙，刻有"SR"。油画背面贴着一张褪色标签——"苏瑞肖像，2005年"。' },
+  lab_notebook: { name: '实验记录本', desc: '记录47次"记忆重塑"实验数据。第24号受试者栏标记为红色——"严重不良反应，已终止"。最后一页被撕掉，残留印刷日期"3月15日"。' },
+  microscope_slide: { name: '显微镜载玻片', desc: '载玻片上有红色粉末，旁边检测报告草稿显示"样本与KCN光谱匹配度99.2%——确认为氰化钾"。底部铅笔字迹写着"致死量：0.3g"。' },
+  floor_marks: { name: '地面拖拽痕迹', desc: '从实验台到门口有不规则拖拽痕迹。地砖缝隙中发现一枚纽扣——与陈默的制服缺失的纽扣吻合。痕迹旁还有一组深色鞋印，鞋码约42。' },
+  hidden_note_act1: { name: '尸体下的纸条', desc: '法医报告残页一小片，被压在陈默身下。上面写着："受试者24号的血液样本被替换过——原样本中含有高浓度地西泮（安眠药）。替换日期：3月15日。"字迹与陈默的签名一致。' },
+  hidden_phone_act1: { name: '陈默的旧手机', desc: '在实验台夹层中发现一部旧手机。最后一条草稿箱短信未发送——收件人：苏婉清："我知道你不是营养师。你哥哥的事不是我的错，是曹博士下的命令。0315见，我们把话说清楚。"' },
+  vase_fragments: { name: '破碎的花瓶', desc: '玄关角落散落大量陶瓷碎片，底部有明显撞击痕迹。碎片间夹杂一根深色棉质纤维和一颗半透明纽扣。' },
+  visitor_log: { name: '访客登记本', desc: '前台的访客登记本，最后签名者是陈默（20:12）。但签名上方有一个被划掉的签名——残余笔画可辨认为"苏"字。下一页被撕掉，撕痕很新。' },
+  power_outage: { name: '应急照明记录', desc: '控制面板的日志显示今晚20:25-20:28发生短暂停电，备用电源2分钟后启动。停电期间所有门禁系统自动失效，实验室区域的监控录像出现3秒空白。' },
+  reagent_shelf: { name: '被翻动的试剂架', desc: '试剂架一片混乱。氰化钾标签处空空如也。旁边一瓶"地西泮注射液"也被动过——瓶盖松动，瓶身有擦拭痕迹。' },
+  trash_paper: { name: '垃圾桶碎纸', desc: '实验台下垃圾桶的碎纸片，部分被火烧过。拼凑可见："……第32次实验……受试者出现严重……林薇护士建议终止……"碎片边角有淡雅香水味。' },
+  chemical_bucket: { name: '化学废料桶', desc: '内有一副M码一次性手套，内侧沾红色粉末。手套旁有一小块熔化的塑料残片——经检测为聚碳酸酯容器残余，曾在强酸中浸泡过。' },
+  lab_coat: { name: '实验室白大褂', desc: '挂在角落，口袋中有一张折叠纸条："今晚12点，实验室见。带上你承诺的东西。——C"。笔迹不属于曹博士。白大褂袖口有少量红酒污渍，已经干涸。' },
+  hammer_visible: { name: '工具架上的空缺', desc: '车库工具架上一把标准实验室用锤子不翼而飞。工具架旁边的工具箱中有一卷绝缘胶带被扯断一半。' },
+  entrance_fiber: { name: '玄关门把手纤维', desc: '通往实验室的门把手缝隙中嵌着一小段深蓝色棉质纤维。材质与实验室工作服不符——更像是某件外套的布料。' },
+  clock_stopped: { name: '停摆的挂钟', desc: '玄关墙面上的挂钟停止在8:30。钟面玻璃有裂痕，似乎被硬物撞击过。停摆时间恰好与监控录像中的碎裂声一致。' },
+  mud_footprint: { name: '泥泞脚印', desc: '实验室门口地板上有一个泥泞的半脚印。鞋码约43，纹路为户外登山鞋——研究所内没有人穿这种鞋。' },
+  emergency_exit_act1: { name: '紧急出口撬痕', desc: '紧急出口的门锁有新撬动痕迹，门框上有划痕——工具像是螺丝刀。门外地面有模糊的鞋印，纹路与泥泞脚印相似。' },
+  corpse_wallet: { name: '尸体口袋里的钱包', desc: '翻查陈默的口袋，钱包中有五张不同人的名片——每人背面都写有金额和日期。曹文轩的名片背面写着"200万——今晚"。还有一张苏婉清的照片，背面是他手写的"0315"。他勒索了所有人。' },
+  corpse_shoes: { name: '尸体鞋底的泥土', desc: '刮下陈默鞋底的泥土检测。含有花岗岩微粒和机油痕迹——与地下车库地面成分一致。他在死前不久去过车库。鞋底还有少量干涸的红酒渍。' },
+  // Act 2
+  letter1: { name: '勒索信（林薇的）', desc: '"曹博士，我知道你在进行非法实验。明天之前准备好50万，否则证据将送到媒体。"纸张有淡雅香水味——与垃圾桶碎纸上的香味一致。信封背面指纹模糊。' },
+  letter2: { name: '辞职申请书', desc: '张峰的辞职信："我无法再参与这种违背伦理的实验。陈默已掌握所有实验数据，请慎重。"日期为三天前。曹博士批注："不同意。你知道太多。"' },
+  diary: { name: '曹博士的日记', desc: '三天前："陈默要求200万封口费。不可能给他。"昨天："苏婉清的身份有问题——我查了她的资料，营养师证是假的。"今天："今晚解决陈默。赵强的钱也不能再用了。"' },
+  cup: { name: '带红色残留的红酒杯', desc: '水槽中的高脚杯，内壁有红色液体残留，甜杏仁味（氰化物特征）。杯脚只有一组指纹——不属于陈默。杯沿还有一圈淡白色粉末残留。' },
+  hidden_notebook_act2: { name: '张峰的私人笔记本', desc: '藏书室书架夹缝中的笔记本，扉页写"张峰——第24次-第47次实验记录"。第24号受试者页面被撕掉，残留字迹："……苏瑞……申请退出……曹博士下令继续……3月15日死亡。"' },
+  hidden_lins_threat: { name: '陈默给林薇的威胁信', desc: '在陈默的旧手机照片夹中发现一封截图——发给林薇的邮件草稿："林护士，你协助注射的视频我保存了。下个月1万涨到2万。不准报警。——陈默"。发件日期：三个月前。' },
+  wine_bottle: { name: '开封的红酒瓶', desc: '瓶身标注"2005年波尔多"。瓶口残留物与杯中一致。酒标背面用铅笔写有"S.W."——苏婉清名字的缩写。瓶内液面下降了约三分之一。' },
+  scale_powder: { name: '电子秤上的粉末', desc: '厨房角落精密电子秤的托盘上有白色粉末。秤读数0.32g——恰好氰化钾致死量。粉末已被检测确认为KCN。托盘下压着一张超市小票，日期为今晚7:45。' },
+  faded_photo: { name: '被刮花的照片', desc: '床头柜抽屉中的旧照片。曹博士与一年轻女子合影，女子面容被刻意刮花。背面写"2009年，与瑞"。照片底部还有三分之一被整齐裁掉——裁剪线留下的人像是另一个年轻男子。' },
+  window_scratch: { name: '主卧窗锁划痕', desc: '窗锁有新鲜金属划痕，窗台外侧有半枚模糊泥鞋印——鞋码约43，纹路为登山鞋。窗台内侧散落着几根深蓝色纤维。' },
+  broken_bottle: { name: '碎裂的药瓶', desc: '垃圾桶中碎裂的棕色小瓶，标签残存"氰化钾——剧毒"。瓶身有曹博士的指纹。但碎片间的玻璃隔层中发现第二组指纹——属于女性。' },
+  phone_record: { name: '座机通话记录', desc: '书房的座机记录显示今晚7:30有一通来电——号码来自辉瑞医药集团总部。通话2分17秒。电话旁边的笔记本上写着"赵——230万——今晚见"。' },
+  pill_bottle: { name: '空安眠药瓶', desc: '主卧床头的空药瓶，标签"地西泮注射液"。瓶盖内侧有针孔——有人用注射器抽取过。瓶底刻着"S.R."。生产日期一个月前。' },
+  visitor_log_act2: { name: '访客登记本（复看）', desc: '再次查看，发现陈默签名下方被划掉的签名经加热显现为"赵强"。撕掉的下一页残留在本子的装订处——隐约有"苏"字。' },
+  su_resume: { name: '苏婉清的简历', desc: '藏书室桌上的一份营养师简历复印件。姓名：苏婉清。认证机构经核查不存在。简历底部有一行铅笔手写："查苏瑞——第24号——已死亡。"' },
+  fang_contract: { name: '房屋买卖合同', desc: '在书架夹层中发现的房产文件——赵强名下的公司欲购买研究所所在地块，出价超出市场价三倍。合同签署日期是一个月前，曹博士尚未签字。' },
+  zhou_notes: { name: '周明远的笔记', desc: '法律便笺本上的记录："曹咨询我关于受试者意外死亡的法律责任——时间半年前。今天又问我关于氰化钾的管制——我该举报吗？"日期为今天。' },
+  kitchen_glove: { name: '厨房手套', desc: '水槽下柜子中一副橡胶手套，内侧有红色粉末。手套型号M码——研究所专供。手套旁有一个已经变质的苹果，咬了之后被丢弃。' },
+  // Act 3
+  mirror_message: { name: '镜子上的字迹', desc: '浴室镜子上用手指蘸水写下："凶手不止一个。"旁边还有一个几乎看不出的数字"031"。字迹僵硬扭曲——写得非常匆忙。' },
+  medicine_box: { name: '被翻过的医药箱', desc: '地西泮注射液（安眠药）少了一瓶。领用记录显示上周领了5瓶，现存4瓶。领用人签名处被涂抹，但紫外灯下可见"林薇"字迹。' },
+  surveillance: { name: '车库监控录像', desc: '19:50——有人在后备箱取锤子。20:00——曹博士端红酒进实验室。20:15——陈默独自去实验室。20:25——停电。20:28——来电后锤子已不见。' },
+  hammer: { name: '带暗色痕迹的锤子', desc: '锤头有干涸暗色液体——鉴定为人类血液，血型与陈默相同。锤柄有女性发绳（浅棕色），还有一组部分指纹——与张峰的指纹匹配。' },
+  safe_note: { name: '保险箱密码提示', desc: '保险箱旁的说明书上写"0315——S的生日"。S可能指苏婉清——但她的生日是7月。也可能是苏瑞（S.R.）——如果3月15日是他被记录死亡的日子。' },
+  blood_trail: { name: '浴室血迹', desc: '浴缸内侧有已干涸的暗色血迹，排水口有小撮深色头发。地漏滤网有皮屑组织——DNA检测与陈默匹配。血迹与拖拽痕迹的方向相反，似乎有人在此清洗过。' },
+  hidden_phone_act3: { name: '陈默的旧手机（复看）', desc: '在马桶水箱中发现的旧手机——短信记录显示："赵强：曹的实验快被曝光了，你也有份。付50万。"无法送达——赵强的号码已注销。' },
+  hidden_secret_key_found: { name: 'SR钥匙的刻痕', desc: '用放大镜检查SR钥匙，发现握柄内侧刻着极小字迹："24号——苏瑞——对不起。"字迹为陈默的笔迹。钥匙是陈默藏起来的，油画是他故意弄倒的。' },
+  blood_rag: { name: '血布', desc: '操作台下深色抹布，大量红色液体浸渍——血型与陈默相同。折叠方式工整，故意藏匿。布角有蓝色纤维与玄关门把手纤维一致。' },
+  anonymous_letter: { name: '匿名威胁信', desc: '藏书室书架后无署名信："停止研究，否则后果自负。"信纸有消毒水味与医药箱一致。寄件地址伪造——实为城西化工用品店的地址。' },
+  vent_papers: { name: '通风管碎纸', desc: '浴室通风口取出的碎纸片拼凑："……第32次实验……陈默要求林薇额外注射……受试者出现心跳骤停……"碎片边缘有火烧痕迹。' },
+  torn_photo: { name: '被撕碎的照片', desc: '车库垃圾桶中撕碎照片拼合：曹博士与一男一女合影。背面写"苏瑞、曹文轩与苏婉清——2009年春"。苏瑞的脸被圈起来画了叉。' },
+  shoe_print: { name: '42码鞋印', desc: '实验室角落有半枚泥鞋印——码数42，与曹博士一致。但鞋印方向朝向门口，且被拖拽痕迹覆盖——说明鞋印出现在拖拽之前。' },
+  pill_bottle_act3: { name: '安眠药瓶（复看）', desc: '重新检查安眠药瓶，发现瓶盖内侧有注射器针孔——有人抽取过瓶中药液。瓶身检测出苏婉清的指纹。瓶中残留药物剂量约5ml——足以使成年人昏睡。' },
+  wiring: { name: '配电箱痕迹', desc: '车库配电箱门有撬动痕迹，内部总闸的防护盖被取下。旁边的墙上有新鲜指印——指纹部分被擦除，但残留的沟纹与赵强的大拇指匹配。' },
+  chen_work_log: { name: '陈默的值班日志', desc: '在保安室（玄关侧室）发现的日志本。今晚的记录："19:30 林薇来访——未登记。20:00 张峰带工具箱进库。20:15 赵强从后门进入——他说来找曹博士。"' },
+  su_bag: { name: '苏婉清的背包', desc: '浴室储物柜中的女士背包，内有一张被水浸湿的纸条："瑞哥，我一定会查清楚真相。你在天上等我。——清清"。还有一张曹博士的照片，背面写着"凶手"。' },
+  wire_cut: { name: '被剪断的监控线', desc: '车库监控摄像头的信号线被剪断——工具为实验室剪刀。断口平整，表明是在来电后剪断的。剪刀把手上有张峰的指纹。' },
+  // Act 4
+  partnership: { name: '合伙协议', desc: '2008年曹文轩与"赵先生"创办研究所的协议。保密条款："不得泄露研究内容。"赵先生身份涂黑——但红外扫描显示"赵强——辉瑞医药"。' },
+  confession_letter: { name: '保险箱认罪书', desc: '曹博士亲笔："是我杀了陈默。氰化钾放入红酒中。动机：他发现了非法实验并勒索200万。"笔迹确认。但纸张左下角被撕破——缺失的部分在苏婉清背包中发现的小纸条上。' },
+  computer_files: { name: '密室电脑文件', desc: '非法实验完整记录、3名受试者死亡、资金来自"赵先生"（赵强）。未发送邮件："赵，实验失控了。我需要更多钱处理。"——曹文轩。文件最后修改时间：今晚20:28。' },
+  usb_drive: { name: '门禁记录U盘', desc: '今晚门禁记录：曹18:00入、林19:30入、张19:45入（带工具箱）、苏20:00入（带红酒）、赵20:15从紧急出口入、周20:00入。陈默20:15入后无出记录。' },
+  bedroom_note: { name: '曹博士的便签', desc: '枕头下的纸条："今晚一切都会解决。——C"笔迹与认罪书一致。背面还有一行小字："如果失败，0315的真相足够让所有人闭嘴。"' },
+  hidden_card_act4: { name: '赵强的真名片', desc: '地毯下的金色名片："赵强——辉瑞医药集团并购总监"。背面手写："曹的项目价值连城，务必拿下。——FDA拒绝信已到，曹还不知道。"名片被故意踩扁——陈默踩的。' },
+  hidden_twist_reveal: { name: '密室隐藏文件', desc: '密室电脑的隐藏文件夹，密码为0315。内含文件："曹文轩并非下毒的唯一人选。苏婉清的红酒先被下了安眠药，但曹文轩在她之前将氰化钾加入了同一杯红酒。死亡时间应在20:22左右。"' },
+  research_funding: { name: '秘密资金记录', desc: '过去三个月赵强通过多个账户转入230万。备注"研究经费"，但转账时间集中在23:00-2:00。一个月前突然停止——恰好是FDA拒绝曹博士申请的日期。' },
+  su_medical: { name: '苏瑞的死亡记录', desc: '主卧保险柜中的机密档案："受试者24号（苏瑞）——3月15日死亡。死因：药物过敏反应。"文件中缺失第3页——第3页被发现在密室电脑的隐藏文件夹中。' },
+  autopsy_report: { name: '法医补充报告', desc: '车库工具箱暗格中的法医报告第3页："受试者24号血液中含高浓度地西泮，为正常剂量的10倍。该剂量足以致死。原死因判断有误。"签名：林薇（护士）。日期：3月15日。' },
+  email_draft: { name: '曹博士的未发邮件', desc: '密室电脑收件箱："赵——陈默今晚必须解决。你从后门进来的时候小心监控。我8:00在实验室等他。——曹"。发件时间今晚19:45。但网络在19:46被切断，邮件从未被发送。' },
+  zhou_statement: { name: '周明远的完整证词', desc: '藏书室便签："我8:30到，曹博士手抖得厉害。讨论约20分钟。之后我在走廊遇到苏婉清——她脸色苍白，手里拿着一瓶红酒。她说这瓶是新的。后来我看到她去厨房换了一瓶。"' },
+  emergency_exit: { name: '紧急出口完整调查', desc: '门锁被专业工具撬动（非螺丝刀）。门框纤维为深蓝色棉——与林薇外套颜色一致。门外鞋印为43码登山鞋，但在研究所的工具箱中发现了相同纹路的鞋套。' },
+  wine_residue: { name: '红酒瓶的真相', desc: '法医检测显示红酒瓶中实际含有两种药物：氰化钾（致死量）和地西泮（安眠药）。氰化钾是后来加入的——安眠药首先被溶入红酒，说明有两个人先后动了这瓶酒。' },
+  glove_dna: { name: '手套DNA检测', desc: '化学废料桶中找到的手套经检测：外侧有曹博士的皮肤细胞，内侧有红色粉末（氰化钾）。但手套的第三指内侧有极微量的女性表皮细胞——DNA与林薇的匹配。' },
+  su_last_note: { name: '苏婉清的遗书草稿', desc: '苏婉清背包内层中的纸条："瑞哥，我找到了真相。曹博士下令给你注射过量安眠药，林薇执行的。我本想用红酒让他们付出代价——但有人比我先动手了。0315，你的忌日。"' },
+  fang_last_entry: { name: '赵强的最后记录', desc: '赵强手机备忘录："陈默今晚约我车库里见。他说他掌握了我和曹的交易证据。我带了锤子防身。推了他，他摔倒了。但那时他还活着。谁杀了他？"' },
+  chen_truth: { name: '陈默的日记本', desc: '主卧深处发现的陈默个人日记："我知道的太多了。曹博士的实验杀死了苏瑞——林薇是帮凶。张峰是帮凶。赵强是推手。周明远装作不知。所以我要让他们所有人付出代价。今晚，我同时勒索每一个人。"' },
+  // Special
+  secret_room_key: { name: '密室钥匙', desc: '刻有"SR"的古铜色钥匙。油画是你故意弄倒的。' }
+};
+
+// Show detail modal for a public clue (shared by other players / AI)
+function showPublicClueDetail(key) {
+  const item = CLUE_ITEM_DATA[key] || { name: key, desc: '未知线索' };
+  const actNum = CLUE_ACT_MAP[key] || '?';
+  const imgHtml = getClueImageHtml(key, item.name);
+  let html = `${imgHtml}<h3>📌 ${item.name}</h3>
+    <p class="clue-pop">${item.desc}</p>
+    <div style="padding:8px;background:rgba(39,174,96,0.1);border-radius:8px;margin-bottom:16px;font-size:13px;color:var(--accent-green);">
+      🌐 公开线索 · 第${actNum}幕
+    </div>`;
+  html += `<div class="modal-actions">
+    <button class="btn btn-gold" onclick="closePuzzle()">关闭</button>
+  </div>`;
+  openPuzzle(html);
+}
+
+// Show detail modal for a personal clue — includes image, details, and a Share button
+function showPersonalClueDetail(key) {
+  const item = CLUE_ITEM_DATA[key] || { name: key, desc: '未知线索' };
+  const actNum = CLUE_ACT_MAP[key] || '?';
+  const imgHtml = getClueImageHtml(key, item.name);
+  const isKiller = myCharacter && myCharacter.role === '凶手';
+  const canDestroy = isKiller && !key.endsWith('_door') && !key.startsWith('secret_room');
+  let html = `${imgHtml}<h3>🔍 ${item.name}</h3>
+    <p class="clue-pop">${item.desc}</p>
+    <div style="padding:8px;background:rgba(212,160,23,0.1);border-radius:8px;margin-bottom:16px;font-size:13px;color:var(--accent-gold);">
+      🔑 个人线索 · 第${actNum}幕
+    </div>`;
+  html += `<div class="modal-actions">`;
+  html += `<button class="btn btn-gold" onclick="closePuzzle();openShareModal('${key}')">📤 分享线索</button>`;
+  if (canDestroy) {
+    html += `<button class="btn btn-outline" style="color:var(--accent-red);border-color:var(--accent-red);" onclick="closePuzzle();destroyClue('${key}')">🔥 销毁线索</button>`;
+  }
+  html += `<button class="btn btn-outline" onclick="closePuzzle()">关闭</button>`;
+  html += `</div>`;
+  openPuzzle(html);
+}
+
+function renderInventory() {
+  const list = document.getElementById('inventoryList');
+  const personalClues = inventory.filter(k => !k.endsWith('_door'));
+  const maxClues = 3;
+  // Public clues: only shared clues, excluding personal inventory
+  const publicClues = sharedClues.filter(k => !k.endsWith('_door') && !inventory.includes(k));
+
+  let countHtml = `<div style="font-size:11px;color:var(--text-dim);margin-bottom:6px;padding:2px 0;border-bottom:1px solid var(--border);">
+    个人 ${personalClues.length}/${maxClues} · 公开 ${publicClues.length}
+  </div>`;
+
+  // Killer-only hint banner
+  const isKiller = myCharacter && myCharacter.role === '凶手';
+  let killerHintHtml = '';
+  if (isKiller) {
+    killerHintHtml = `<div style="background:rgba(231,76,60,0.08);border:1px solid rgba(231,76,60,0.25);border-radius:8px;padding:8px 10px;margin-bottom:8px;font-size:11px;line-height:1.6;color:var(--text-secondary);">
+      <span style="color:var(--accent-red);font-weight:700;">🔥 销毁线索</span>：点击个人线索后可在详情窗口中销毁线索，减少其他玩家获取的信息量。
+      <br><span style="color:var(--accent-red);">⚠️ 注意</span>：请勿在聊天中提及"销毁线索"功能，避免引起其他玩家怀疑。
+    </div>`;
+  }
+
+  if (personalClues.length === 0 && publicClues.length === 0) {
+    list.innerHTML = countHtml + killerHintHtml + '<div class="empty-inventory">尚未发现任何线索<br><br>探索房间来收集线索</div>';
+    return;
+  }
+
+  // Helper: render a clue item
+  function renderClueItem(key, isPersonal) {
+    const item = CLUE_ITEM_DATA[key] || { name: key, desc: '', clue: '' };
+    const thumbSrc = CLUE_IMAGES[key] || '';
+    const thumbHtml = thumbSrc ? `<div class="item-thumb-sm"><img src="${thumbSrc}" alt="" onerror="this.parentElement.style.display='none'"></div>` : '';
+    const actNum = CLUE_ACT_MAP[key] || '?';
+    const isKiller = myCharacter && myCharacter.role === '凶手';
+    const shareHint = isPersonal
+      ? '<div style="font-size:11px;color:var(--text-dim);margin-top:8px;">点击查看详情并分享</div>'
+      : '<div style="font-size:11px;color:var(--text-dim);margin-top:8px;">📂 其他玩家发现的线索 · 点击查看详情</div>';
+    const itemCls = isPersonal ? 'personal-clue' : 'public-clue';
+    const clickHandler = isPersonal
+      ? `onclick="showPersonalClueDetail('${key}')"`
+      : `onclick="showPublicClueDetail('${key}')"`;
+    return `<div class="inventory-item ${itemCls}" ${clickHandler} style="display:flex;gap:12px;align-items:flex-start;">
+      ${thumbHtml}
+      <div style="flex:1;min-width:0;">
+        <div class="item-name">${isPersonal ? '🔍' : '📌'} ${item.name}<span class="item-badge act-badge">第${actNum}幕</span></div>
+        <div class="item-desc">${item.desc}</div>
+        ${shareHint}
+      </div>
+    </div>`;
+  }
+
+  // Helper: render a section grouped by act
+  function renderClueSection(clueKeys, isPersonal) {
+    // Group by act
+    const byAct = {};
+    clueKeys.forEach(key => {
+      const act = CLUE_ACT_MAP[key] || 0;
+      if (!byAct[act]) byAct[act] = [];
+      byAct[act].push(key);
+    });
+
+    let html = '';
+    const sortedActs = Object.keys(byAct).sort((a, b) => a - b);
+    sortedActs.forEach(act => {
+      const actId = `act_${isPersonal ? 'personal' : 'public'}_${act}`;
+      const isActCollapsed = collapsedClueSections.has(actId);
+      const actClueCount = byAct[act].length;
+      html += `<div class="clue-act-label${isActCollapsed ? ' collapsed' : ''}" onclick="toggleClueSection('${actId}', this)">
+        <span class="act-num">第${act}幕</span> · ${ACT_NAMES[act] || ''} <span style="opacity:0.5;margin-left:2px;">(${actClueCount})</span>
+        <span class="collapse-icon">▼</span>
+      </div>`;
+      html += `<div class="clue-act-group${isActCollapsed ? ' collapsed' : ''}" data-act-group="${actId}">`;
+      byAct[act].forEach(key => {
+        html += renderClueItem(key, isPersonal);
+      });
+      html += `</div>`;
+    });
+    return html;
+  }
+
+  let html = countHtml + killerHintHtml;
+
+  // --- Personal clues section ---
+  if (personalClues.length > 0) {
+    const catId = 'cat_personal';
+    const isCatCollapsed = collapsedClueSections.has(catId);
+    html += `<div class="clue-category">
+      <div class="clue-category-header personal${isCatCollapsed ? ' collapsed' : ''}" onclick="toggleClueSection('${catId}', this)">
+        🔑 个人线索（${personalClues.length}）
+        <span class="collapse-icon">▼</span>
+      </div>
+      <div class="clue-category-content${isCatCollapsed ? ' collapsed' : ''}" data-cat-content="${catId}">`;
+    html += renderClueSection(personalClues, true);
+    html += `</div></div>`;
+  }
+
+  // --- Public clues section ---
+  if (publicClues.length > 0) {
+    const catId = 'cat_public';
+    const isCatCollapsed = collapsedClueSections.has(catId);
+    html += `<div class="clue-category">
+      <div class="clue-category-header public${isCatCollapsed ? ' collapsed' : ''}" onclick="toggleClueSection('${catId}', this)">
+        🌐 公开线索（${publicClues.length}）
+        <span class="collapse-icon">▼</span>
+      </div>
+      <div class="clue-category-content${isCatCollapsed ? ' collapsed' : ''}" data-cat-content="${catId}">`;
+    html += renderClueSection(publicClues, false);
+    html += `</div></div>`;
+  }
+
+  if (personalClues.length === 0) {
+    html += `<div class="clue-empty-section">暂无个人线索，去探索房间收集线索吧</div>`;
+  }
+  if (publicClues.length === 0 && personalClues.length > 0) {
+    html += `<div class="clue-empty-section">暂无公开线索，其他玩家发现后会显示在此</div>`;
+  }
+
+  list.innerHTML = html;
+}
+
+// Toggle collapse/expand for clue sections
+function toggleClueSection(sectionId, headerEl) {
+  const isCollapsed = collapsedClueSections.has(sectionId);
+  if (isCollapsed) {
+    collapsedClueSections.delete(sectionId);
+  } else {
+    collapsedClueSections.add(sectionId);
+  }
+
+  // Update header visual
+  if (headerEl) {
+    headerEl.classList.toggle('collapsed', !isCollapsed);
+  }
+
+  // Update content container
+  if (sectionId.startsWith('cat_')) {
+    // Category-level toggle
+    const contentEl = document.querySelector(`[data-cat-content="${sectionId}"]`);
+    if (contentEl) {
+      contentEl.classList.toggle('collapsed', !isCollapsed);
+    }
+  } else if (sectionId.startsWith('act_')) {
+    // Act-level toggle
+    const groupEl = document.querySelector(`[data-act-group="${sectionId}"]`);
+    if (groupEl) {
+      groupEl.classList.toggle('collapsed', !isCollapsed);
+    }
+  }
+}
+
+// ========== PLAYERS PANEL ==========
+function renderPlayersPanel() {
+  const charNames = ['曹文轩','林薇','张峰','苏婉清','赵强','周明远'];
+  const list = document.getElementById('playersList');
+  list.innerHTML = allPlayers.map((p, i) => {
+    if (!p || !p.connected) return '';
+    const cIdx = charNames.indexOf(p.character);
+    const avatarSrc = cIdx >= 0 ? `assets/characters/character_${cIdx}.jpg` : '';
+    const avatarHtml = avatarSrc
+      ? `<img class="player-avatar-img" src="${avatarSrc}" alt="" onerror="this.style.display='none'">`
+      : `<div class="p-avatar">${p.avatar}</div>`;
+    const isMe = i === myPlayerId;
+    const canInteract = !isMe && (gamePhase === 'explore' || gamePhase === 'dm_question' || gamePhase === 'discuss') && !p.isAI;
+    return `<div class="player-card">
+      ${avatarHtml}
+      <div class="p-info">
+        <div class="p-name">${p.character} ${isMe ? '<span style="font-size:10px;background:rgba(41,128,185,0.3);color:#5dade2;padding:2px 6px;border-radius:10px;margin-left:4px;">你</span>' : ''} ${p.isAI ? '<span style="font-size:10px;background:rgba(142,68,173,0.3);color:#bb86fc;padding:2px 6px;border-radius:10px;margin-left:4px;">AI</span>' : ''}</div>
+        <div class="p-title">${p.name}</div>
+      </div>
+      ${!isMe ? `<div class="p-actions">
+        ${canInteract ? `<button class="btn btn-outline btn-sm" onclick="openPrivateChat(${i},'${p.character.replace(/'/g,"\\'")}')">私聊</button>` : ''}
+        <button class="btn btn-outline btn-sm" onclick="showPlayerInfo(${i})">查看信息</button>
+      </div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+// Update players panel periodically
+setInterval(renderPlayersPanel, 2000);
+
+function openPrivateChat(targetIdx, targetName) {
+  const target = allPlayers[targetIdx];
+  if (!target) return;
+  // Create or reuse private chat overlay
+  let overlay = document.getElementById('privateChatOverlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'privateChatOverlay';
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal" style="max-width:440px;">
+        <div class="modal-header">
+          <h3 id="pmTitle">私聊</h3>
+          <button class="modal-close" onclick="closePrivateChat()">&times;</button>
+        </div>
+        <div class="pm-messages" id="pmMessages" style="min-height:180px;max-height:300px;overflow-y:auto;padding:12px;"></div>
+        <div style="display:flex;gap:8px;padding:12px;border-top:1px solid var(--border);">
+          <input type="text" id="pmInput" placeholder="输入私密消息..." maxlength="200" autocomplete="off" style="flex:1;">
+          <button class="btn btn-gold btn-sm" onclick="sendPrivateMsg(${targetIdx})">发送</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+  }
+  document.getElementById('pmTitle').textContent = `与 ${targetName} 私聊`;
+  document.getElementById('pmMessages').innerHTML = '';
+  overlay._targetIdx = targetIdx;
+  overlay.classList.add('active');
+  document.getElementById('pmInput').focus();
+  document.getElementById('pmInput').onkeydown = (e) => { if (e.key === 'Enter') sendPrivateMsg(targetIdx); };
+  AudioManager.playSFX('chat_message');
+}
+
+function closePrivateChat() {
+  const overlay = document.getElementById('privateChatOverlay');
+  if (overlay) overlay.classList.remove('active');
+}
+
+function sendPrivateMsg(targetIdx) {
+  const input = document.getElementById('pmInput');
+  const msg = input.value.trim();
+  if (!msg) return;
+  socket.emit('private-message', targetIdx, msg);
+  // Show own message
+  const box = document.getElementById('pmMessages');
+  box.innerHTML += `<div class="chat-msg" style="margin-bottom:8px;"><span class="sender" style="color:var(--accent-gold);">我</span>${escapeHtml(msg)}</div>`;
+  box.scrollTop = box.scrollHeight;
+  input.value = '';
+  input.focus();
+}
+
+// Public character info (no secrets)
+const CHARACTERS_PUBLIC = {
+  '曹文轩': { title: '博士 · 实验室主任', intro: '晨曦生物研究所创始人兼首席研究员，年近五十，性格沉稳而冷漠。在学术界享有盛誉，是本次"成果展示晚宴"的东道主。' },
+  '林薇': { title: '记者 · 自由撰稿人', intro: '知名调查记者，三十出头，以揭露社会黑暗面著称。外表优雅干练，言辞犀利。受邀参加晚宴据说是为了采访研究所的最新成果。' },
+  '张峰': { title: '研究生 · 实验助手', intro: '曹博士的研究生，二十六岁，性格内向谨慎。在研究所工作已两年，主要协助进行化学分析实验。' },
+  '苏婉清': { title: '外科医生 · 死者家属', intro: '陈默的未婚妻，是一名外科医生。性格温柔但内心坚韧。今晚是以家属身份前来研究所。' },
+  '赵强': { title: '商人 · 神秘投资人', intro: '商界人士，四十多岁，穿着考究，举止自信。与曹博士是多年旧识，据说在商界颇有影响力。' },
+  '周明远': { title: '律师 · 法律顾问', intro: '资深律师，是研究所的法律顾问。为人冷静理性，言辞严谨。与曹博士的交情可以追溯到大学时代。' }
+};
+
+function showPlayerInfo(playerIdx) {
+  const p = allPlayers[playerIdx];
+  if (!p) return;
+  const charNames = ['曹文轩','林薇','张峰','苏婉清','赵强','周明远'];
+  const cIdx = charNames.indexOf(p.character);
+  const avatarSrc = cIdx >= 0 ? `assets/characters/character_${cIdx}.jpg` : '';
+  const pub = CHARACTERS_PUBLIC[p.character] || { intro: '暂无信息。' };
+  const avatarHtml = avatarSrc
+    ? `<img src="${avatarSrc}" style="width:60px;height:60px;border-radius:50%;object-fit:cover;border:2px solid var(--border);margin-bottom:12px;" onerror="this.style.display='none'">`
+    : '';
+
+  let overlay = document.getElementById('playerInfoOverlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'playerInfoOverlay';
+    overlay.className = 'modal-overlay';
+    document.body.appendChild(overlay);
+  }
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:380px;text-align:center;">
+      <div class="modal-header"><h3>角色信息</h3>
+        <button class="modal-close" onclick="closePlayerInfo()">&times;</button>
+      </div>
+      <div style="padding:20px;">
+        ${avatarHtml}
+        <div style="font-size:18px;font-weight:700;color:var(--accent-gold);margin-bottom:4px;">${p.avatar} ${p.character}</div>
+        <div style="font-size:13px;color:var(--text-dim);margin-bottom:6px;">${p.name}</div>
+        <div style="font-size:13px;color:var(--accent-green);margin-bottom:14px;padding:4px 12px;background:rgba(39,174,96,0.1);border-radius:12px;display:inline-block;">${pub.title || ''}</div>
+        <div style="text-align:left;font-size:14px;color:var(--text-primary);line-height:1.6;padding:12px;background:var(--bg-primary);border-radius:var(--radius);">${pub.intro}</div>
+      </div>
+      <div style="padding:0 20px 20px;">
+        <button class="btn btn-outline" style="width:100%;" onclick="closePlayerInfo()">关闭</button>
+      </div>
+    </div>`;
+  overlay.classList.add('active');
+  AudioManager.playSFX('chat_message');
+}
+
+function closePlayerInfo() {
+  const overlay = document.getElementById('playerInfoOverlay');
+  if (overlay) overlay.classList.remove('active');
+}
+
+socket.on('private-message', (data) => {
+  // Show in main chat as before
+  const msg = document.createElement('div');
+  msg.className = 'chat-msg private-msg';
+  msg.innerHTML = `<span style="color:var(--accent-purple);font-size:11px;">[来自 ${data.from} 的私密消息]</span><br>${escapeHtml(data.text)}`;
+  document.getElementById('chatMessages').appendChild(msg);
+  scrollChat();
+  // Also show in private chat overlay if open
+  const pmBox = document.getElementById('pmMessages');
+  if (pmBox) {
+    pmBox.innerHTML += `<div class="chat-msg" style="margin-bottom:8px;"><span class="sender" style="color:var(--accent-purple);">${data.from}</span>${escapeHtml(data.text)}</div>`;
+    pmBox.scrollTop = pmBox.scrollHeight;
+  }
+});
+
+// ========== TABS ==========
+function switchTab(tab) {
+  document.querySelectorAll('.sidebar-tab').forEach((t, i) => {
+    t.classList.toggle('active', ['chat','inventory','players'][i] === tab);
+  });
+  document.querySelectorAll('.sidebar-panel').forEach((p, i) => {
+    p.classList.toggle('active', ['chat','inventory','players'][i] === tab);
+  });
+}
+
+// ========== DISCUSSION / VOTE ==========
+socket.on('game-state', (state) => {
+  gamePhase = state.phase;
+  allPlayers = state.players;
+  lastGameState = state;
+  globalFoundClues = state.foundClues || [];
+  if (state.myInventory) inventory = state.myInventory;
+
+  // Show start discussion button in explore phase
+  const actions = document.getElementById('gameActions');
+  if (state.phase === 'explore' && state.currentAct > 0) {
+    const voted = state.myEndActVoted;
+    const count = state.endActVotes || 0;
+    const total = state.endActTotal || 0;
+    const disabledAttr = voted ? 'disabled style="opacity:0.5;"' : '';
+    actions.innerHTML = `<button class="btn btn-red" id="endActBtn" onclick="endAct()" ${disabledAttr}>⏹ 结束本环节</button>
+      <span style="color:var(--text-dim);font-size:12px;align-self:center;margin-left:4px;">已投票 ${count}/${total}${voted ? ' (你已投票)' : ''}</span>`;
+  } else if (state.phase === 'dm_question') {
+    actions.innerHTML = `<span style="color:var(--accent-gold);font-size:14px;font-weight:600;">🎭 DM正在等待你们的答案...</span>
+      <span style="color:var(--text-dim);font-size:12px;align-self:center;margin-left:8px;">在聊天框中输入关键答案</span>`;
+  } else if (state.phase === 'explore' && myPlayerId === 0 && !state.currentAct) {
+    actions.innerHTML = `<button class="btn btn-gold" onclick="startDiscussion()">进入讨论阶段</button>`;
+  } else if (state.phase === 'discuss' && myPlayerId === 0) {
+    actions.innerHTML = `<button class="btn btn-red" onclick="startVotingFromClient()">进入投票阶段</button>`;
+  } else {
+    actions.innerHTML = '';
+  }
+
+  if (state.phase === 'vote') {
+    renderVoteScreen();
+  }
+
+  renderPlayersPanel();
+});
+
+function startDiscussion() {
+  socket.emit('start-discussion');
+}
+
+function startVotingFromClient() {
+  // Timer will auto-transition, but host can force
+  addSystemMsg('房主提前结束了讨论阶段');
+}
+
+function renderVoteScreen() {
+  let html = `<div style="text-align:center;margin-bottom:16px;">
+    <h2 style="font-size:24px;color:var(--accent-red);">投票选出凶手</h2>
+    <p style="color:var(--text-secondary);font-size:14px;">选择你认为的凶手</p>
+  </div>
+  <div class="vote-grid">`;
+  allPlayers.forEach((p, i) => {
+    if (i === myPlayerId || !p.connected) return;
+    html += `<div class="vote-card" id="voteCard${i}" onclick="castVote(${i})">
+      <div class="v-avatar">${p.avatar}</div>
+      <div class="v-name">${p.character}</div>
+      <div class="v-votes" id="voteCount${i}"></div>
+    </div>`;
+  });
+  html += `</div>`;
+  document.getElementById('gameContent').innerHTML = html;
+}
+
+function castVote(targetIdx) {
+  socket.emit('cast-vote', targetIdx);
+  AudioManager.playSFX('vote_cast');
+  sparkleCenter(10);
+  // Visual feedback
+  document.querySelectorAll('.vote-card').forEach(c => c.classList.remove('voted'));
+  const card = document.getElementById('voteCard' + targetIdx);
+  if (card) {
+    card.classList.add('voted');
+    card.style.pointerEvents = 'none';
+  }
+  addSystemMsg('你已投票');
+}
+
+// ========== RESULTS ==========
+socket.on('game-results', (results) => {
+  const overlay = document.getElementById('resultsOverlay');
+  const container = document.getElementById('resultsContainer');
+
+  const isWin = results.votedMurderer;
+  const maxVotes = results.voteCounts.length > 0 ? results.voteCounts[0].votes : 0;
+
+  let html = `<div class="results-title ${isWin ? 'win' : 'lose'}">
+    ${isWin ? '正义得到了伸张' : '凶手逃脱了法网'}
+  </div>`;
+
+  // Murderer reveal
+  html += `<div class="murderer-reveal">
+    <div class="mr-label">真正的凶手是</div>
+    <div class="mr-avatar">${results.murdererCharacter.avatar}</div>
+    <div class="mr-name">${results.murdererCharacter.name}</div>
+    <div class="mr-label">${results.murdererCharacter.title}</div>
+  </div>`;
+
+  // Vote results
+  html += `<div class="vote-results"><h3 style="margin-bottom:16px;color:var(--accent-gold);">投票结果</h3>`;
+  results.voteCounts.forEach(vc => {
+    const pct = maxVotes > 0 ? (vc.votes / (allPlayers.filter(p=>p.connected).length - 1) * 100) : 0;
+    html += `<div class="vote-result-bar">
+      <div class="vr-name">${vc.targetAvatar} ${vc.targetCharacter}</div>
+      <div class="vr-bar"><div class="vr-fill" style="width:${Math.min(pct, 100)}%">${vc.votes} 票</div></div>
+    </div>`;
+  });
+  html += `</div>`;
+
+  // All roles
+  html += `<div style="margin-bottom:20px;"><h3 style="margin-bottom:12px;color:var(--accent-gold);">全部角色身份</h3>
+    <div class="role-reveal-grid">`;
+  results.playerRoles.forEach(pr => {
+    const isMurderer = pr.character.role === '凶手';
+    html += `<div class="role-reveal-card" style="${isMurderer ? 'border-color:var(--accent-red);' : ''}">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span style="font-size:20px;">${pr.character.avatar}</span>
+        <div>
+          <div class="rr-name">${pr.character.name}</div>
+          <div class="rr-role" style="${isMurderer ? 'color:var(--accent-red);font-weight:700;' : ''}">${pr.character.role} · ${pr.character.title}</div>
+        </div>
+      </div>
+    </div>`;
+  });
+  html += `</div></div>`;
+
+  html += `<div style="text-align:center;">
+    <button class="btn btn-gold" onclick="restartGame()">再来一局</button>
+  </div>`;
+
+  container.innerHTML = html;
+  overlay.classList.add('active');
+  stopTimer();
+  hideTaskButton();
+  AudioManager.stopBGM();
+  AudioManager.playSFX(isWin ? 'game_end_win' : 'game_end_lose');
+});
+
+function restartGame() {
+  document.getElementById('resultsOverlay').classList.remove('active');
+  socket.emit('restart-game');
+  resetClientState();
+  showScreen('waiting');
+}
+
+function leaveGame() {
+  socket.emit('restart-game');
+  resetClientState();
+  // Close all overlays
+  document.getElementById('storyOverlay').classList.remove('active');
+  document.getElementById('characterOverlay').classList.remove('active');
+  document.getElementById('resultsOverlay').classList.remove('active');
+  document.getElementById('puzzleOverlay').classList.remove('active');
+  document.getElementById('voteOverlay').classList.remove('active');
+  showScreen('lobby');
+}
+
+function leaveWaitingRoom() {
+  showScreen('lobby');
+}
+
+function resetClientState() {
+  inventory = [];
+  myCharacter = null;
+  myPlayerId = -1;
+  hideTaskButton();
+  currentRoom = 'entrance';
+  roomEntered = false;
+  gamePhase = 'waiting';
+  globalFoundClues = [];
+  globalDestroyedItems = [];
+  sharedClues = [];
+  lastGameState = {};
+  renderInventory();
+  stopTimer();
+  AudioManager.stopBGM();
+}
+
+// ========== TIMER ==========
+function startTimer(endTime) {
+  stopTimer();
+  phaseStartTime = Date.now();
+  phaseDuration = (endTime - phaseStartTime) / 1000;
+  timerInterval = setInterval(() => {
+    const remaining = Math.max(0, Math.ceil((endTime - Date.now()) / 1000));
+    const min = Math.floor(remaining / 60);
+    const sec = remaining % 60;
+    const el = document.getElementById('headerTimer');
+    if (el) {
+      el.textContent = `${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+      if (remaining <= 30) {
+        el.style.color = 'var(--accent-red)';
+        if (remaining % 5 === 0) AudioManager.playSFX('timer_warning');
+      }
+      else el.style.color = 'var(--accent-gold)';
+    }
+    updateProgressBar(remaining, phaseDuration);
+    if (remaining <= 0) { stopTimer(); hideProgressBar(); }
+  }, 1000);
+}
+
+function stopTimer() {
+  if (timerInterval) {
+    clearInterval(timerInterval);
+    timerInterval = null;
+  }
+}
+
+// ========== KEY ITEM: USE KEY ==========
+socket.on('puzzle-trigger', (data) => {
+  if (data.puzzleKey === 'safe_code') {
+    let html = `<h3>🔐 保险箱密码</h3>
+      <p>${data.puzzle.prompt}</p>
+      <div class="input-group">
+        <input type="text" id="puzzleAnswer" placeholder="输入4位数字密码" 
+          style="width:100%;padding:12px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;color:var(--text-primary);font-size:20px;text-align:center;letter-spacing:12px;" 
+          maxlength="4" autocomplete="off" inputmode="numeric">
+      </div>
+      <div class="modal-actions" style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn btn-gold" onclick="solvePuzzle('safe_code')">确认</button>
+        <button class="btn btn-outline" onclick="requestHint('safe_code',1)">提示1</button>
+        <button class="btn btn-outline" onclick="requestHint('safe_code',2)">提示2</button>
+        <button class="btn btn-outline" onclick="closePuzzle()">取消</button>
+      </div>`;
+    openPuzzle(html);
+  }
+});
+
+// Auto use secret room key when entering library with key
+const origEnterRoom = enterRoom;
+enterRoom = function(roomKey) {
+  origEnterRoom(roomKey);
+  if (roomKey === 'library' && inventory.includes('secret_room_key')) {
+    setTimeout(() => {
+      if (confirm('你有一把刻着"SR"的钥匙，要使用它打开密室吗？')) {
+        socket.emit('use-key', 'secret_room_key');
+        AudioManager.playSFX('key_use');
+      }
+    }, 500);
+  }
+};
+
+// ========== ENTER KEY HANDLER ==========
+document.getElementById('playerName').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') createRoom();
+});
+document.getElementById('roomCode').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') joinRoom();
+});
+
+// ========== RECONNECT HANDLING ==========
+socket.on('disconnect', () => {
+  addSystemMsg('⚠️ 与服务器断开连接，尝试重新连接...');
+});
+
+socket.on('connect', () => {
+  if (roomCode && myPlayerId >= 0) {
+    const name = allPlayers[myPlayerId]?.name;
+    if (name) {
+      socket.emit('reconnect-player', roomCode, name, (res) => {
+        if (res.success) {
+          addSystemMsg('✅ 重新连接成功');
+        }
+      });
+    }
+  }
+});
+</script>
+</body>
+</html>
