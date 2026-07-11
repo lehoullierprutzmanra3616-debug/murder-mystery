@@ -159,6 +159,42 @@
   .waiting-player-card .name { font-size: 14px; color: var(--text-secondary); }
   .waiting-player-card.filled .name { color: var(--text-primary); }
 
+  /* Character selection in waiting room */
+  .char-select-section { max-width: 600px; width: 100%; }
+  .char-select-title { font-size: 15px; color: var(--accent-gold); font-weight: 700; margin-bottom: 10px; text-align: center; }
+  .char-select-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
+  }
+  .char-select-card {
+    background: var(--bg-card); border: 2px solid var(--border);
+    border-radius: var(--radius-lg); padding: 14px 10px; text-align: center;
+    cursor: pointer; transition: all 0.2s; position: relative; overflow: hidden;
+  }
+  .char-select-card:hover { border-color: var(--accent-gold); transform: translateY(-2px); }
+  .char-select-card.selected {
+    border-color: var(--accent-gold);
+    background: linear-gradient(135deg, rgba(212,160,23,0.15), rgba(212,160,23,0.05));
+    box-shadow: 0 0 12px rgba(212,160,23,0.3);
+  }
+  .char-select-card.taken-by-other {
+    opacity: 0.45; cursor: not-allowed; border-color: var(--border);
+  }
+  .char-select-card.taken-by-other:hover { transform: none; border-color: var(--border); }
+  .char-select-card .cs-avatar { font-size: 28px; margin-bottom: 6px; }
+  .char-select-card .cs-name { font-size: 14px; font-weight: 700; margin-bottom: 2px; }
+  .char-select-card .cs-title { font-size: 11px; color: var(--text-dim); }
+  .char-select-card .cs-badge {
+    position: absolute; top: 4px; right: 4px;
+    font-size: 10px; padding: 2px 6px; border-radius: 8px;
+    background: var(--accent-green); color: #fff; font-weight: 600;
+  }
+  .char-select-card .cs-taken-by {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    font-size: 10px; padding: 3px 6px; background: rgba(0,0,0,0.6);
+    color: var(--accent-gold); text-align: center; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap;
+  }
+
   /* ========== GAME SCREEN ========== */
   #game {
     display: flex; flex-direction: column; height: 100vh; overflow: hidden;
@@ -560,6 +596,20 @@
     .story-overlay { justify-content: flex-start; padding: 30px 16px; }
   }
   .story-overlay.active { display: flex; }
+
+  /* Character selection overlay (between story and character_intro) */
+  .char-select-overlay {
+    display: none; position: fixed; inset: 0; z-index: 100;
+    background: rgba(0,0,0,0.95);
+    flex-direction: column; align-items: center; justify-content: center;
+    padding: 40px 20px; overflow-y: auto; -webkit-overflow-scrolling: touch;
+  }
+  @media (max-width: 600px) {
+    .char-select-overlay { justify-content: flex-start; padding: 30px 16px; }
+  }
+  .char-select-overlay.active { display: flex; }
+  .char-select-overlay .char-select-title { font-size: 22px; }
+  .char-select-overlay .char-select-grid { max-width: 600px; }
   .story-content {
     max-width: 700px; width: 100%; text-align: center;
   }
@@ -1342,7 +1392,7 @@
       <div class="code" id="roomCodeBig"></div>
     </div>
     <div class="waiting-players" id="waitingPlayers"></div>
-    <p style="color: var(--text-dim); font-size: 13px;">需要 4-6 名玩家才能开始</p>
+    <p style="color: var(--text-dim); font-size: 13px;">需要 4-6 名玩家才能开始，不足 6 人时自动补充 AI</p>
   </div>
 </div>
 
@@ -1441,6 +1491,16 @@
   </div>
   <div id="storyAckInfo" style="text-align:center;margin-top:20px;color:var(--text-dim);font-size:13px;"></div>
   <button class="btn btn-gold" style="margin-top:16px;" onclick="storyAck()" id="storyAckBtn">继续</button>
+</div>
+
+<!-- ========== CHARACTER SELECTION OVERLAY ========== -->
+<div class="char-select-overlay" id="charSelectOverlay">
+  <div class="char-select-section">
+    <div class="char-select-title">🎭 选择你的角色</div>
+    <p style="color: var(--text-dim); font-size: 13px; text-align:center; margin-bottom:16px;">选择一个角色，剩余角色将自动分配给 AI</p>
+    <div class="char-select-grid" id="charSelectOverlayGrid"></div>
+    <div id="charSelectProgress" style="text-align:center;margin-top:16px;color:var(--accent-gold);font-size:14px;font-weight:600;"></div>
+  </div>
 </div>
 
 <!-- ========== CHARACTER OVERLAY ========== -->
@@ -2389,11 +2449,18 @@ function cancelLeaveConfirm() {
 function confirmLeaveYes() {
   document.getElementById('leaveConfirmOverlay').classList.remove('active');
   resumeTimer();
-  // 清空游戏数据
+  // 清空游戏数据 + 会话
   resetClientState();
+  sessionStorage.removeItem('ms_session');
   roomCode = '';
-  // 通知服务器清理单人模式房间
+  // 通知服务器离开（单人模式清理房间 / 多人模式移除玩家）
   socket.emit('leave-solo');
+  socket.emit('leave-room');
+  // 关闭所有 overlay
+  document.getElementById('storyOverlay').classList.remove('active');
+  document.getElementById('charSelectOverlay').classList.remove('active');
+  document.getElementById('characterOverlay').classList.remove('active');
+  document.getElementById('resultsOverlay').classList.remove('active');
   showScreen('lobby');
 }
 
@@ -2869,6 +2936,8 @@ function createRoom() {
       roomCode = res.roomCode;
       socket.emit('join-room', roomCode, name, (r) => {
         if (r.success) {
+          window._myName = name;
+          sessionStorage.setItem('ms_session', JSON.stringify({ roomCode, name }));
           enterWaitingRoom(roomCode);
         } else {
           showError(r.error);
@@ -2886,7 +2955,14 @@ function joinRoom() {
   socket.emit('join-room', code, name, (res) => {
     if (res.success) {
       roomCode = res.roomCode;
+      window._myName = name;
+      if (typeof res.playerId !== 'undefined') {
+        // Rejoining an active game — playerId is set
+        myPlayerId = res.playerId;
+      }
+      sessionStorage.setItem('ms_session', JSON.stringify({ roomCode, name }));
       enterWaitingRoom(roomCode);
+      // If rejoining mid-game, the game-state will route to the correct screen
     } else {
       showError(res.error);
     }
@@ -2903,6 +2979,8 @@ function startSolo() {
   socket.emit('start-solo', finalName, (res) => {
     if (res.success) {
       roomCode = res.roomCode;
+      window._myName = finalName;
+      sessionStorage.setItem('ms_session', JSON.stringify({ roomCode, name: finalName }));
       showScreen('game');
       addSystemMsg('🎮 单人模式已启动！');
     } else {
@@ -2959,6 +3037,23 @@ socket.on('game-state', (state) => {
 
   if (state.phase === 'waiting') {
     renderWaitingPlayers(state);
+    document.getElementById('roomCodeLabel').textContent = roomCode;
+    document.getElementById('roomCodeBig').textContent = roomCode;
+    showScreen('waiting');
+  }
+
+  // Character selection overlay (multiplayer, after story phase)
+  renderCharSelect(state);
+
+  // On reconnect after page refresh: route to the correct screen for active game phases
+  if (state.phase === 'story' || state.phase === 'character_selection' ||
+      state.phase === 'character_intro' || state.phase === 'explore' ||
+      state.phase === 'discuss' || state.phase === 'vote' ||
+      state.phase === 'dm_question' || state.phase === 'act_transition') {
+    const gameScreen = document.getElementById('game');
+    if (gameScreen && !gameScreen.classList.contains('active')) {
+      showScreen('game');
+    }
   }
 
   if (state.phase === 'explore' || state.phase === 'dm_question' || state.phase === 'discuss' || state.phase === 'vote') {
@@ -3031,9 +3126,14 @@ function renderWaitingPlayers(state) {
   for (let i = 0; i < 6; i++) {
     const p = state.players[i];
     if (p) {
+      const aiTag = p.wasHuman
+        ? ' <span style="font-size:10px;color:var(--accent-gold);">AI接管</span>'
+        : p.isAI
+          ? ' <span style="font-size:10px;color:var(--accent-purple);">AI</span>'
+          : '';
       html += `<div class="waiting-player-card filled">
         <div class="avatar">${p.avatar || '?'}</div>
-        <div class="name">${p.name}</div>
+        <div class="name">${p.name}${aiTag}</div>
       </div>`;
     } else {
       html += `<div class="waiting-player-card">
@@ -3044,6 +3144,68 @@ function renderWaitingPlayers(state) {
   }
   container.innerHTML = html;
   document.getElementById('startBtn').style.display = (state.players.length >= 4) ? '' : 'none';
+}
+
+function renderCharSelect(state) {
+  const overlay = document.getElementById('charSelectOverlay');
+  if (!overlay) return;
+  // Show only during character_selection phase
+  if (state.phase !== 'character_selection') {
+    overlay.classList.remove('active');
+    return;
+  }
+  overlay.classList.add('active');
+
+  const choices = state.characterChoices || [];
+  const selections = state.characterSelections || {};
+  // Find my player index by name
+  let myIdx = -1;
+  if (state.players) {
+    myIdx = state.players.findIndex(p => !p.isAI && p.name === (window._myName || ''));
+  }
+
+  const grid = document.getElementById('charSelectOverlayGrid');
+  let html = '';
+  choices.forEach(char => {
+    const selectorEntry = Object.entries(selections).find(([pi, ci]) => parseInt(ci) === char.idx);
+    const selectorIdx = selectorEntry ? parseInt(selectorEntry[0]) : null;
+    const isMine = selectorIdx === myIdx;
+    const isTakenByOther = selectorIdx !== null && selectorIdx !== myIdx;
+    const selectorName = (selectorIdx !== null && state.players[selectorIdx]) ? state.players[selectorIdx].name : '';
+
+    let cls = 'char-select-card';
+    let badge = '';
+    let takenBy = '';
+    let onClick = '';
+    if (isMine) {
+      cls += ' selected';
+      badge = '<span class="cs-badge">已选</span>';
+      onClick = `onclick="selectCharacter(${char.idx})"`;
+    } else if (isTakenByOther) {
+      cls += ' taken-by-other';
+      takenBy = `<div class="cs-taken-by">${escapeHtml(selectorName)} 已选</div>`;
+    } else {
+      onClick = `onclick="selectCharacter(${char.idx})"`;
+    }
+    html += `<div class="${cls}" ${onClick}>
+      ${badge}
+      <div class="cs-avatar">${char.avatar}</div>
+      <div class="cs-name" style="color:${char.color}">${char.name}</div>
+      <div class="cs-title">${char.title}</div>
+      ${takenBy}
+    </div>`;
+  });
+  grid.innerHTML = html;
+
+  // Show progress
+  const acked = state.selectionAcks || 0;
+  const total = state.selectionAcksTotal || 0;
+  const prog = document.getElementById('charSelectProgress');
+  if (prog) prog.textContent = `已选择 ${acked}/${total}`;
+}
+
+function selectCharacter(charIdx) {
+  socket.emit('select-character', charIdx);
 }
 
 // ========== STORY ==========
@@ -4475,10 +4637,15 @@ function renderPlayersPanel() {
       : `<div class="p-avatar">${p.avatar}</div>`;
     const isMe = i === myPlayerId;
     const canInteract = !isMe && (gamePhase === 'explore' || gamePhase === 'dm_question' || gamePhase === 'discuss') && !p.isAI;
+    const aiTag = p.wasHuman
+      ? '<span style="font-size:10px;background:rgba(212,160,23,0.25);color:var(--accent-gold);padding:2px 6px;border-radius:10px;margin-left:4px;">AI接管</span>'
+      : p.isAI
+        ? '<span style="font-size:10px;background:rgba(142,68,173,0.3);color:#bb86fc;padding:2px 6px;border-radius:10px;margin-left:4px;">AI</span>'
+        : '';
     return `<div class="player-card">
       ${avatarHtml}
       <div class="p-info">
-        <div class="p-name">${p.character} ${isMe ? '<span style="font-size:10px;background:rgba(41,128,185,0.3);color:#5dade2;padding:2px 6px;border-radius:10px;margin-left:4px;">你</span>' : ''} ${p.isAI ? '<span style="font-size:10px;background:rgba(142,68,173,0.3);color:#bb86fc;padding:2px 6px;border-radius:10px;margin-left:4px;">AI</span>' : ''}</div>
+        <div class="p-name">${p.character} ${isMe ? '<span style="font-size:10px;background:rgba(41,128,185,0.3);color:#5dade2;padding:2px 6px;border-radius:10px;margin-left:4px;">你</span>' : ''} ${aiTag}</div>
         <div class="p-title">${p.name}</div>
       </div>
       ${!isMe ? `<div class="p-actions">
@@ -4864,9 +5031,12 @@ function restartGame() {
 
 function leaveGame() {
   socket.emit('restart-game');
+  socket.emit('leave-room');
   resetClientState();
+  sessionStorage.removeItem('ms_session');
   // Close all overlays
   document.getElementById('storyOverlay').classList.remove('active');
+  document.getElementById('charSelectOverlay').classList.remove('active');
   document.getElementById('characterOverlay').classList.remove('active');
   document.getElementById('resultsOverlay').classList.remove('active');
   document.getElementById('puzzleOverlay').classList.remove('active');
@@ -4875,6 +5045,10 @@ function leaveGame() {
 }
 
 function leaveWaitingRoom() {
+  sessionStorage.removeItem('ms_session');
+  socket.emit('leave-room');
+  roomCode = '';
+  resetClientState();
   showScreen('lobby');
 }
 
@@ -4973,6 +5147,7 @@ socket.on('disconnect', () => {
 });
 
 socket.on('connect', () => {
+  // Case 1: already in-game (socket dropped mid-session) — roomCode & myPlayerId still in memory
   if (roomCode && myPlayerId >= 0) {
     const name = allPlayers[myPlayerId]?.name;
     if (name) {
@@ -4982,6 +5157,31 @@ socket.on('connect', () => {
         }
       });
     }
+    return;
+  }
+
+  // Case 2: page was refreshed — restore session from sessionStorage and attempt reconnect
+  const saved = sessionStorage.getItem('ms_session');
+  if (!saved) return;
+  try {
+    const { roomCode: savedCode, name: savedName } = JSON.parse(saved);
+    if (!savedCode || !savedName) return;
+    socket.emit('reconnect-player', savedCode, savedName, (res) => {
+      if (res.success) {
+        roomCode = res.roomCode;
+        myPlayerId = res.playerId;
+        window._myName = savedName;
+        document.getElementById('roomCodeLabel').textContent = res.roomCode;
+        document.getElementById('roomCodeBig').textContent = res.roomCode;
+        // The server's emitGameState will route to the correct screen/overlay
+        addSystemMsg('✅ 已恢复游戏会话');
+      } else {
+        // Room no longer exists or player was removed — clear stale session
+        sessionStorage.removeItem('ms_session');
+      }
+    });
+  } catch (e) {
+    sessionStorage.removeItem('ms_session');
   }
 });
 </script>
