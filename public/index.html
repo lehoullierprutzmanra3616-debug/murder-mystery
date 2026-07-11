@@ -274,10 +274,28 @@
     flex: 1; padding: 10px; text-align: center; font-size: 13px;
     background: transparent; border: none; color: var(--text-dim);
     cursor: pointer; transition: all 0.2s; border-bottom: 2px solid transparent;
+    position: relative;
   }
   .sidebar-tab.active { color: var(--accent-gold); border-bottom-color: var(--accent-gold); }
   .sidebar-tab:hover { color: var(--text-secondary); }
-  .sidebar-panel { display: none; flex: 1; flex-direction: column; overflow: hidden; }
+  /* Unread badge on the 聊天 tab */
+  .chat-unread-badge {
+    position: absolute; top: -3px; right: 2px;
+    min-width: 18px; height: 18px; padding: 0 5px;
+    background: var(--accent-red); color: #fff;
+    font-size: 11px; font-weight: 700; line-height: 18px;
+    border-radius: 9px; text-align: center;
+    box-shadow: 0 0 0 2px var(--bg-primary), 0 0 10px rgba(192,57,43,0.7);
+    animation: badgePulse 2s ease-in-out infinite;
+    transform-origin: center;
+    pointer-events: none;
+    z-index: 2;
+  }
+  @keyframes badgePulse {
+    0%, 100% { transform: scale(1); box-shadow: 0 0 0 2px var(--bg-primary), 0 0 6px rgba(192,57,43,0.5); }
+    50% { transform: scale(1.08); box-shadow: 0 0 0 2px var(--bg-primary), 0 0 14px rgba(192,57,43,0.85); }
+  }
+  .sidebar-panel { display: none; flex: 1; flex-direction: column; overflow: hidden; position: relative; }
   .sidebar-panel.active { display: flex; }
 
   /* Chat */
@@ -328,6 +346,86 @@
     color: var(--text-primary); font-size: 14px; outline: none;
   }
   .chat-input-area input:focus { border-color: var(--accent-gold); }
+
+  /* Voice button */
+  .chat-voice-btn {
+    flex-shrink: 0; width: 38px; height: 38px;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: var(--radius); cursor: pointer;
+    color: var(--text-secondary); font-size: 16px;
+    transition: all 0.2s; padding: 0;
+  }
+  .chat-voice-btn:hover { border-color: var(--accent-gold); color: var(--accent-gold); }
+  .chat-voice-btn.recording {
+    background: var(--accent-red); border-color: var(--accent-red); color: #fff;
+    animation: micPulse 1s ease-in-out infinite;
+  }
+  @keyframes micPulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(192,57,43,0.5); }
+    50% { box-shadow: 0 0 0 8px rgba(192,57,43,0); }
+  }
+
+  /* Recording overlay bar (replaces input area while recording) */
+  .chat-recording-bar {
+    display: flex; align-items: center; gap: 10px; width: 100%;
+    padding: 10px 14px; background: rgba(192,57,43,0.12);
+    border: 1px solid rgba(192,57,43,0.4); border-radius: var(--radius);
+  }
+  .rec-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent-red); animation: micPulse 1s infinite; flex-shrink: 0; }
+  .rec-timer { font-size: 14px; font-weight: 700; color: var(--accent-red); font-variant-numeric: tabular-nums; }
+  .rec-hint { font-size: 12px; color: var(--text-secondary); flex: 1; }
+  .rec-cancel { font-size: 12px; color: var(--text-dim); cursor: pointer; padding: 4px 8px; border-radius: 4px; }
+  .rec-cancel:hover { color: var(--accent-red); }
+  .rec-send-btn {
+    padding: 6px 14px; background: var(--accent-gold); color: #0a0a0f;
+    border: none; border-radius: var(--radius); font-size: 12px; font-weight: 700; cursor: pointer;
+  }
+  .rec-send-btn:hover { opacity: 0.85; }
+
+  /* Voice message bubble */
+  .chat-msg.voice-msg { display: flex; align-items: center; gap: 8px; }
+  .voice-play-btn {
+    flex-shrink: 0; width: 32px; height: 32px; border-radius: 50%;
+    background: var(--accent-gold); border: none; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    color: #0a0a0f; font-size: 14px; transition: transform 0.15s;
+  }
+  .voice-play-btn:hover { transform: scale(1.1); }
+  .voice-play-btn.playing { background: var(--accent-red); color: #fff; }
+  .voice-info { display: flex; flex-direction: column; gap: 2px; }
+  .voice-duration { font-size: 12px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+  .voice-waveform { display: flex; align-items: center; gap: 2px; height: 16px; }
+  .voice-waveform span { display: inline-block; width: 2px; background: var(--accent-gold); border-radius: 1px; opacity: 0.6; }
+  .voice-waveform.playing span { animation: waveBounce 0.8s ease-in-out infinite; }
+  .voice-waveform.playing span:nth-child(2) { animation-delay: 0.1s; }
+  .voice-waveform.playing span:nth-child(3) { animation-delay: 0.2s; }
+  .voice-waveform.playing span:nth-child(4) { animation-delay: 0.3s; }
+  .voice-waveform.playing span:nth-child(5) { animation-delay: 0.4s; }
+  @keyframes waveBounce { 0%, 100% { height: 4px; } 50% { height: 14px; } }
+
+  /* Floating "jump to latest" button */
+  .chat-jump-btn {
+    position: absolute; bottom: 70px; right: 16px;
+    padding: 7px 16px;
+    background: linear-gradient(135deg, var(--accent-gold), #b8860b);
+    color: #0a0a0f; font-size: 12px; font-weight: 700;
+    border: none; border-radius: 16px; cursor: pointer;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+    z-index: 5; transition: transform 0.15s, box-shadow 0.15s;
+    animation: fadeIn 0.25s;
+  }
+  .chat-jump-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.6); }
+
+  /* Unread dot on player-list "私聊" buttons */
+  .pm-unread-dot {
+    display: inline-block; min-width: 14px; height: 14px; padding: 0 3px;
+    background: var(--accent-red); color: #fff;
+    font-size: 9px; font-weight: 700; line-height: 14px;
+    border-radius: 7px; text-align: center; margin-left: 4px;
+    vertical-align: top; box-shadow: 0 0 0 2px var(--bg-card);
+    animation: badgePulse 1.6s ease-in-out infinite;
+  }
 
   /* Inventory */
   .inventory-list {
@@ -1293,15 +1391,26 @@
     </div>
     <div class="game-sidebar">
       <div class="sidebar-tabs">
-        <button class="sidebar-tab active" onclick="switchTab('chat')">聊天</button>
+        <button class="sidebar-tab active" onclick="switchTab('chat')">聊天<span class="chat-unread-badge" id="chatUnreadBadge" style="display:none;"></span></button>
         <button class="sidebar-tab" onclick="switchTab('inventory')">线索</button>
         <button class="sidebar-tab" onclick="switchTab('players')">玩家</button>
       </div>
       <div class="sidebar-panel active" id="panel-chat">
         <div class="chat-messages" id="chatMessages"></div>
-        <div class="chat-input-area">
+        <button class="chat-jump-btn" id="chatJumpBtn" style="display:none;" onclick="jumpToLatest()">↓ 回到最新</button>
+        <div class="chat-input-area" id="chatInputArea">
           <input type="text" id="chatInput" placeholder="输入消息..." maxlength="200" autocomplete="off">
+          <button class="chat-voice-btn" id="voiceBtn" onclick="toggleVoiceRecording()" title="语音消息">🎤</button>
           <button class="btn btn-gold btn-sm" onclick="sendChat()">发送</button>
+        </div>
+        <div class="chat-input-area" id="chatRecordingArea" style="display:none;">
+          <div class="chat-recording-bar">
+            <span class="rec-dot"></span>
+            <span class="rec-timer" id="recTimer">0:00</span>
+            <span class="rec-hint">正在录音...</span>
+            <span class="rec-cancel" onclick="cancelVoiceRecording()">取消</span>
+            <button class="rec-send-btn" onclick="stopAndSendVoice()">发送</button>
+          </div>
         </div>
       </div>
       <div class="sidebar-panel" id="panel-inventory">
@@ -2279,6 +2388,12 @@ function cancelLeaveConfirm() {
 
 function confirmLeaveYes() {
   document.getElementById('leaveConfirmOverlay').classList.remove('active');
+  resumeTimer();
+  // 清空游戏数据
+  resetClientState();
+  roomCode = '';
+  // 通知服务器清理单人模式房间
+  socket.emit('leave-solo');
   showScreen('lobby');
 }
 
@@ -3634,7 +3749,7 @@ socket.on('clue-shared', (data) => {
     showClueDetailModal(data.itemKey, data.item, data.fromCharacter);
   });
   document.getElementById('chatMessages').appendChild(msg);
-  scrollChat();
+  onNewIncomingMessage();
   AudioManager.playSFX('clue_shared');
   highlightNewMessage(msg);
 
@@ -3679,6 +3794,144 @@ document.getElementById('chatInput').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') sendChat();
 });
 
+// ========== VOICE MESSAGES ==========
+let mediaRecorder = null;
+let voiceChunks = [];
+let recStartTime = 0;
+let recTimerInterval = null;
+let voiceStream = null;
+const MAX_REC_SECONDS = 60;
+
+function formatDuration(sec) {
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return m + ':' + String(s).padStart(2, '0');
+}
+
+async function toggleVoiceRecording() {
+  if (mediaRecorder && mediaRecorder.state === 'recording') {
+    stopAndSendVoice();
+    return;
+  }
+  // Request microphone access
+  try {
+    voiceStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (err) {
+    addSystemMsg('🎤 无法访问麦克风，请检查浏览器权限设置');
+    return;
+  }
+  // Pick the first supported mime type
+  const mimeType = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4']
+    .find(t => MediaRecorder.isTypeSupported(t)) || '';
+  mediaRecorder = new MediaRecorder(voiceStream, mimeType ? { mimeType } : undefined);
+  voiceChunks = [];
+
+  mediaRecorder.ondataavailable = (e) => {
+    if (e.data.size > 0) voiceChunks.push(e.data);
+  };
+
+  mediaRecorder.onstop = () => {
+    // Stop mic tracks
+    if (voiceStream) { voiceStream.getTracks().forEach(t => t.stop()); voiceStream = null; }
+    clearInterval(recTimerInterval);
+    restoreChatInput();
+    if (voiceChunks.length === 0) return;
+    const blob = new Blob(voiceChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+    // If under ~500ms, treat as accidental
+    const duration = (Date.now() - recStartTime) / 1000;
+    if (duration < 0.5) return;
+    sendVoiceBlob(blob, duration);
+  };
+
+  mediaRecorder.start();
+  recStartTime = Date.now();
+  // Switch UI to recording bar
+  document.getElementById('chatInputArea').style.display = 'none';
+  document.getElementById('chatRecordingArea').style.display = 'flex';
+  document.getElementById('voiceBtn').classList.add('recording');
+  // Start timer
+  document.getElementById('recTimer').textContent = '0:00';
+  recTimerInterval = setInterval(() => {
+    const elapsed = (Date.now() - recStartTime) / 1000;
+    document.getElementById('recTimer').textContent = formatDuration(elapsed);
+    if (elapsed >= MAX_REC_SECONDS) stopAndSendVoice();
+  }, 200);
+}
+
+function stopAndSendVoice() {
+  if (mediaRecorder && mediaRecorder.state === 'recording') {
+    mediaRecorder.stop(); // triggers onstop -> sendVoiceBlob
+  }
+}
+
+function cancelVoiceRecording() {
+  if (mediaRecorder && mediaRecorder.state === 'recording') {
+    voiceChunks = []; // discard
+    mediaRecorder.onstop = () => {
+      if (voiceStream) { voiceStream.getTracks().forEach(t => t.stop()); voiceStream = null; }
+      clearInterval(recTimerInterval);
+      restoreChatInput();
+    };
+    mediaRecorder.stop();
+  }
+}
+
+function restoreChatInput() {
+  document.getElementById('chatInputArea').style.display = 'flex';
+  document.getElementById('chatRecordingArea').style.display = 'none';
+  document.getElementById('voiceBtn').classList.remove('recording');
+}
+
+function blobToBase64(blob) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result);
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function sendVoiceBlob(blob, duration) {
+  // Check size — socket.io default max is 1MB; warn if too large
+  if (blob.size > 900000) {
+    addSystemMsg('🎤 语音文件过大，请缩短录音时间');
+    return;
+  }
+  const base64 = await blobToBase64(blob);
+  socket.emit('voice-message', {
+    audio: base64,
+    duration: Math.round(duration),
+    mimeType: blob.type
+  });
+}
+
+// Play a voice message — toggles play/pause on the clicked bubble's <audio>.
+function playVoiceMessage(btn, audioDataUrl) {
+  const audioEl = btn.parentElement.querySelector('audio');
+  const waveform = btn.parentElement.querySelector('.voice-waveform');
+  if (!audioEl) return;
+  if (audioEl.paused) {
+    // Stop any other playing audio first
+    document.querySelectorAll('.voice-play-btn.playing').forEach(b => {
+      if (b !== btn) { b.classList.remove('playing'); b.textContent = '▶'; const a = b.parentElement.querySelector('audio'); if (a) a.pause(); const w = b.parentElement.querySelector('.voice-waveform'); if (w) w.classList.remove('playing'); }
+    });
+    audioEl.src = audioDataUrl;
+    audioEl.play();
+    btn.classList.add('playing');
+    btn.textContent = '⏸';
+    if (waveform) waveform.classList.add('playing');
+    audioEl.onended = () => {
+      btn.classList.remove('playing');
+      btn.textContent = '▶';
+      if (waveform) waveform.classList.remove('playing');
+    };
+  } else {
+    audioEl.pause();
+    btn.classList.remove('playing');
+    btn.textContent = '▶';
+    if (waveform) waveform.classList.remove('playing');
+  }
+}
+
 socket.on('chat-message', (data) => {
   const msg = document.createElement('div');
   msg.className = 'chat-msg';
@@ -3689,7 +3942,8 @@ socket.on('chat-message', (data) => {
     : '';
   msg.innerHTML = `${chatAvatarHtml}<span class="sender" style="color:${data.color}">${data.avatar} ${data.characterName}</span>${escapeHtml(data.text)}`;
   document.getElementById('chatMessages').appendChild(msg);
-  scrollChat();
+  // Own message: always jump to bottom + clear unread. Others: only scroll if already reading near bottom.
+  if (data.playerId === myPlayerId) { scrollChat(true); clearUnread(); updateJumpButton(); } else { onNewIncomingMessage(); }
   AudioManager.playSFX('chat_message');
   highlightNewMessage(msg);
 });
@@ -3707,8 +3961,34 @@ socket.on('dm-message', (data) => {
   msg.className = 'chat-msg dm-msg';
   msg.innerHTML = `<span class="dm-label">DM</span><img class="chat-avatar" src="assets/characters/dm_avatar.jpg" alt="" onerror="this.style.display='none'" style="border-color:var(--accent-gold)"><span class="sender">${data.avatar} ${data.characterName}</span>${escapeHtml(data.text)}`;
   document.getElementById('chatMessages').appendChild(msg);
-  scrollChat();
+  onNewIncomingMessage();
   AudioManager.playSFX('story_next');
+  highlightNewMessage(msg);
+});
+
+socket.on('voice-message', (data) => {
+  const msg = document.createElement('div');
+  msg.className = 'chat-msg voice-msg';
+  const charNames = ['曹文轩','林薇','张峰','苏婉清','赵强','周明远'];
+  const cIdx = charNames.indexOf(data.characterName);
+  const chatAvatarHtml = cIdx >= 0
+    ? `<img class="chat-avatar" src="assets/characters/character_${cIdx}.jpg" alt="" onerror="this.style.display='none'">`
+    : '';
+  const dur = formatDuration(data.duration || 0);
+  const audioId = 'voice_' + data.id;
+  // Build waveform bars (static heights, animate only when playing)
+  const bars = [6,10,14,8,12].map(h => `<span style="height:${h}px;"></span>`).join('');
+  msg.innerHTML = `${chatAvatarHtml}<span class="sender" style="color:${data.color}">${data.avatar} ${data.characterName}</span>
+    <button class="voice-play-btn" onclick="playVoiceMessage(this, document.getElementById('${audioId}').src)">▶</button>
+    <div class="voice-info">
+      <div class="voice-waveform">${bars}</div>
+      <div class="voice-duration">${dur}</div>
+    </div>
+    <audio id="${audioId}" preload="none" src="${data.audio}"></audio>`;
+  document.getElementById('chatMessages').appendChild(msg);
+  // Own voice: always jump to bottom + clear unread. Others: conditional.
+  if (data.playerId === myPlayerId) { scrollChat(true); clearUnread(); updateJumpButton(); } else { onNewIncomingMessage(); }
+  AudioManager.playSFX('chat_message');
   highlightNewMessage(msg);
 });
 
@@ -3791,13 +4071,97 @@ function addSystemMsg(text) {
   msg.className = 'chat-msg system';
   msg.textContent = text;
   document.getElementById('chatMessages').appendChild(msg);
-  scrollChat();
+  onNewIncomingMessage();
 }
 
-function scrollChat() {
-  const el = document.getElementById('chatMessages');
-  el.scrollTop = el.scrollHeight;
+// ===== Unread / smart-scroll logic =====
+let unreadChatCount = 0;
+
+// True when the chat panel is the active sidebar tab.
+function isChatTabActive() {
+  return document.getElementById('panel-chat').classList.contains('active');
 }
+
+// True when the user is currently viewing the bottom of the chat (within a small threshold).
+function isChatNearBottom(threshold = 60) {
+  const el = document.getElementById('chatMessages');
+  if (!el) return true;
+  return el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
+}
+
+// Scroll the chat to the very bottom. When force is false, only scrolls if the
+// user is already reading near the bottom and the chat tab is active — so we never
+// yank someone away who is scrolling back through history.
+function scrollChat(force = false) {
+  const el = document.getElementById('chatMessages');
+  if (!el) return;
+  if (force || (isChatTabActive() && isChatNearBottom())) {
+    el.scrollTop = el.scrollHeight;
+  }
+}
+
+// Called for every incoming message that was NOT sent by the local player.
+// Scrolls when the user is actively reading; otherwise bumps the unread counter.
+function onNewIncomingMessage() {
+  if (isChatTabActive() && isChatNearBottom()) {
+    scrollChat(true);
+  } else {
+    unreadChatCount++;
+    updateUnreadBadge();
+  }
+  updateJumpButton();
+}
+
+// Updates (and shows/hides) the unread badge. The badge element is added in Step 2;
+// until then this is a safe no-op.
+function updateUnreadBadge() {
+  const badge = document.getElementById('chatUnreadBadge');
+  if (!badge) return;
+  if (unreadChatCount > 0) {
+    badge.textContent = unreadChatCount > 99 ? '99+' : unreadChatCount;
+    badge.style.display = 'inline-flex';
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+// Resets the unread counter (called when the user reads the new messages).
+function clearUnread() {
+  if (unreadChatCount !== 0) {
+    unreadChatCount = 0;
+    updateUnreadBadge();
+  }
+}
+
+// Shows/hides the floating "jump to latest" button and updates its label.
+function updateJumpButton() {
+  const btn = document.getElementById('chatJumpBtn');
+  if (!btn) return;
+  if (unreadChatCount > 0) {
+    btn.textContent = '↓ ' + unreadChatCount + ' 条新消息';
+    btn.style.display = 'inline-block';
+  } else if (!isChatNearBottom()) {
+    btn.textContent = '↓ 回到最新';
+    btn.style.display = 'inline-block';
+  } else {
+    btn.style.display = 'none';
+  }
+}
+
+// Scroll to the latest message and clear the unread counter.
+function jumpToLatest() {
+  scrollChat(true);
+  clearUnread();
+  updateJumpButton();
+}
+
+// When the user scrolls to the bottom themselves, clear unread + refresh the jump button.
+document.getElementById('chatMessages').addEventListener('scroll', () => {
+  if (isChatNearBottom()) {
+    clearUnread();
+  }
+  updateJumpButton();
+});
 
 
 // ========== INVENTORY ==========
@@ -4118,7 +4482,7 @@ function renderPlayersPanel() {
         <div class="p-title">${p.name}</div>
       </div>
       ${!isMe ? `<div class="p-actions">
-        ${canInteract ? `<button class="btn btn-outline btn-sm" onclick="openPrivateChat(${i},'${p.character.replace(/'/g,"\\'")}')">私聊</button>` : ''}
+        ${canInteract ? `<button class="btn btn-outline btn-sm" onclick="openPrivateChat(${i},'${p.character.replace(/'/g,"\\'")}')">私聊${pmUnreadByPlayer[p.character] ? `<span class="pm-unread-dot">${pmUnreadByPlayer[p.character]}</span>` : ''}</button>` : ''}
         <button class="btn btn-outline btn-sm" onclick="showPlayerInfo(${i})">查看信息</button>
       </div>` : ''}
     </div>`;
@@ -4127,6 +4491,76 @@ function renderPlayersPanel() {
 
 // Update players panel periodically
 setInterval(renderPlayersPanel, 2000);
+
+// ===== Private chat: unread / smart-scroll logic =====
+let pmUnreadByPlayer = {}; // { characterName: count }
+
+// True when the PM overlay is open and its target is the given character.
+function isPmOverlayOpenFor(charName) {
+  const overlay = document.getElementById('privateChatOverlay');
+  if (!overlay || !overlay.classList.contains('active')) return false;
+  const title = document.getElementById('pmTitle');
+  return title && title.textContent.includes(charName);
+}
+
+function isPmNearBottom(threshold = 40) {
+  const el = document.getElementById('pmMessages');
+  if (!el) return true;
+  return el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
+}
+
+function scrollPm(force = false) {
+  const el = document.getElementById('pmMessages');
+  if (!el) return;
+  if (force || isPmNearBottom()) el.scrollTop = el.scrollHeight;
+}
+
+function updatePmJumpButton() {
+  const btn = document.getElementById('pmJumpBtn');
+  if (!btn) return;
+  const overlay = document.getElementById('privateChatOverlay');
+  const unread = overlay && overlay._unread ? overlay._unread : 0;
+  if (unread > 0) {
+    btn.textContent = '↓ ' + unread + ' 条新消息';
+    btn.style.display = 'inline-block';
+  } else if (!isPmNearBottom()) {
+    btn.textContent = '↓ 回到最新';
+    btn.style.display = 'inline-block';
+  } else {
+    btn.style.display = 'none';
+  }
+}
+
+function jumpPmToLatest() {
+  scrollPm(true);
+  const overlay = document.getElementById('privateChatOverlay');
+  if (overlay) overlay._unread = 0;
+  updatePmJumpButton();
+}
+
+// Incoming PM while overlay is open for this player: scroll or bump overlay unread.
+function onPmIncomingInOverlay() {
+  if (isPmNearBottom()) {
+    scrollPm(true);
+  } else {
+    const overlay = document.getElementById('privateChatOverlay');
+    if (overlay) overlay._unread = (overlay._unread || 0) + 1;
+    updatePmJumpButton();
+  }
+}
+
+// Incoming PM while overlay is closed / for a different player: track for player-list badge.
+function addPmUnread(charName) {
+  pmUnreadByPlayer[charName] = (pmUnreadByPlayer[charName] || 0) + 1;
+  renderPlayersPanel();
+}
+
+function clearPmUnread(charName) {
+  if (pmUnreadByPlayer[charName]) {
+    delete pmUnreadByPlayer[charName];
+    renderPlayersPanel();
+  }
+}
 
 function openPrivateChat(targetIdx, targetName) {
   const target = allPlayers[targetIdx];
@@ -4143,20 +4577,36 @@ function openPrivateChat(targetIdx, targetName) {
           <h3 id="pmTitle">私聊</h3>
           <button class="modal-close" onclick="closePrivateChat()">&times;</button>
         </div>
-        <div class="pm-messages" id="pmMessages" style="min-height:180px;max-height:300px;overflow-y:auto;padding:12px;"></div>
+        <div style="position:relative;">
+          <div class="pm-messages" id="pmMessages" style="min-height:180px;max-height:300px;overflow-y:auto;padding:12px;"></div>
+          <button class="chat-jump-btn" id="pmJumpBtn" style="display:none;bottom:12px;" onclick="jumpPmToLatest()">↓ 回到最新</button>
+        </div>
         <div style="display:flex;gap:8px;padding:12px;border-top:1px solid var(--border);">
           <input type="text" id="pmInput" placeholder="输入私密消息..." maxlength="200" autocomplete="off" style="flex:1;">
           <button class="btn btn-gold btn-sm" onclick="sendPrivateMsg(${targetIdx})">发送</button>
         </div>
       </div>`;
     document.body.appendChild(overlay);
+    // Wire scroll listener once (overlay is reused across players)
+    const pmBox = document.getElementById('pmMessages');
+    pmBox.addEventListener('scroll', () => {
+      if (isPmNearBottom()) {
+        const ov = document.getElementById('privateChatOverlay');
+        if (ov) ov._unread = 0;
+        updatePmJumpButton();
+      }
+    });
   }
   document.getElementById('pmTitle').textContent = `与 ${targetName} 私聊`;
   document.getElementById('pmMessages').innerHTML = '';
   overlay._targetIdx = targetIdx;
+  overlay._unread = 0;
+  clearPmUnread(targetName);
   overlay.classList.add('active');
   document.getElementById('pmInput').focus();
   document.getElementById('pmInput').onkeydown = (e) => { if (e.key === 'Enter') sendPrivateMsg(targetIdx); };
+  scrollPm(true);
+  updatePmJumpButton();
   AudioManager.playSFX('chat_message');
 }
 
@@ -4173,7 +4623,10 @@ function sendPrivateMsg(targetIdx) {
   // Show own message
   const box = document.getElementById('pmMessages');
   box.innerHTML += `<div class="chat-msg" style="margin-bottom:8px;"><span class="sender" style="color:var(--accent-gold);">我</span>${escapeHtml(msg)}</div>`;
-  box.scrollTop = box.scrollHeight;
+  scrollPm(true);
+  const overlay = document.getElementById('privateChatOverlay');
+  if (overlay) overlay._unread = 0;
+  updatePmJumpButton();
   input.value = '';
   input.focus();
 }
@@ -4237,12 +4690,15 @@ socket.on('private-message', (data) => {
   msg.className = 'chat-msg private-msg';
   msg.innerHTML = `<span style="color:var(--accent-purple);font-size:11px;">[来自 ${data.from} 的私密消息]</span><br>${escapeHtml(data.text)}`;
   document.getElementById('chatMessages').appendChild(msg);
-  scrollChat();
-  // Also show in private chat overlay if open
+  onNewIncomingMessage();
+  // Show in private chat overlay if open for this player
   const pmBox = document.getElementById('pmMessages');
-  if (pmBox) {
+  if (pmBox && isPmOverlayOpenFor(data.from)) {
     pmBox.innerHTML += `<div class="chat-msg" style="margin-bottom:8px;"><span class="sender" style="color:var(--accent-purple);">${data.from}</span>${escapeHtml(data.text)}</div>`;
-    pmBox.scrollTop = pmBox.scrollHeight;
+    onPmIncomingInOverlay();
+  } else {
+    // Overlay closed or chatting with someone else: track unread for the player-list badge
+    addPmUnread(data.from);
   }
 });
 
@@ -4254,6 +4710,13 @@ function switchTab(tab) {
   document.querySelectorAll('.sidebar-panel').forEach((p, i) => {
     p.classList.toggle('active', ['chat','inventory','players'][i] === tab);
   });
+  // Returning to the chat tab: clear unread if already at the bottom, and refresh the jump button.
+  if (tab === 'chat') {
+    if (isChatNearBottom()) {
+      clearUnread();
+    }
+    updateJumpButton();
+  }
 }
 
 // ========== DISCUSSION / VOTE ==========
