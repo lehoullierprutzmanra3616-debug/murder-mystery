@@ -1,0 +1,13 @@
+[core]
+	repositoryformatversion = 0
+	filemode = false
+	bare = false
+	logallrefupdates = true
+	symlinks = false
+	ignorecase = true
+[user]
+	email = lehoullier@users.noreply.github.com
+	name = lehoullierprutzmanra3616-debug
+[remote "origin"]
+	url = https://github.com/lehoullierprutzmanra3616-debug/murder-mystery.git
+	fetch = +refs/heads/*:refs/remotes/origin/*

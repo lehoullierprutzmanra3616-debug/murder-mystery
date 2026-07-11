@@ -1,0 +1,13 @@
+{
+  "name": "murder-mystery-online",
+  "version": "1.0.0",
+  "description": "6人在线密室解谜剧本杀游戏",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "socket.io": "^4.7.4"
+  }
+}
