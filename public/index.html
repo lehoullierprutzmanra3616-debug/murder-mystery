@@ -456,7 +456,10 @@
     display: none; position: fixed; inset: 0; z-index: 100;
     background: rgba(0,0,0,0.95);
     flex-direction: column; align-items: center; justify-content: center;
-    padding: 40px;
+    padding: 40px 20px; overflow-y: auto; -webkit-overflow-scrolling: touch;
+  }
+  @media (max-width: 600px) {
+    .story-overlay { justify-content: flex-start; padding: 30px 16px; }
   }
   .story-overlay.active { display: flex; }
   .story-content {
@@ -2398,7 +2401,13 @@ function hideTaskButton() {
 // ============================================================
 // CLIENT STATE
 // ============================================================
-const socket = io();
+const socket = io({
+  transports: ['websocket', 'polling'],
+  reconnection: true,
+  reconnectionAttempts: 10,
+  reconnectionDelay: 1000,
+  timeout: 20000
+});
 let myPlayerId = -1;
 let myCharacter = null;
 let gamePhase = 'waiting';
