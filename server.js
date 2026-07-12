@@ -2285,6 +2285,7 @@ function emitGameState(roomCode) {
       connected: p.connected,
       isAI: p.isAI || false,
       wasHuman: p.wasHuman || false,
+      ready: p.ready || false,
       voted: game.phase === 'vote' && game.votes[i] !== undefined
     })),
     round: game.round,
@@ -2551,6 +2552,7 @@ io.on('connection', (socket) => {
       id: socket.id,
       name: playerName,
       connected: true,
+      ready: false,
       currentRoom: 'entrance',
       inventory: [],
       revealedToMe: new Set()
@@ -2599,6 +2601,25 @@ io.on('connection', (socket) => {
     }
   });
 
+  // --- PLAYER READY ---
+  socket.on('player-ready', (isReady, callback) => {
+    const game = getGame(socket);
+    if (!game || game.phase !== 'waiting') return;
+    const pIdx = game.playerMap[socket.id];
+    if (pIdx === undefined) return;
+    if (game.players[pIdx].isAI) return;
+
+    game.players[pIdx].ready = !!isReady;
+    emitGameState(game.roomCode);
+    if (callback) callback({ success: true, ready: game.players[pIdx].ready });
+
+    const readyCount = game.players.filter(p => !p.isAI && p.ready).length;
+    const humanCount = game.players.filter(p => !p.isAI).length;
+    emitToRoom(game.roomCode, 'system-message', {
+      text: `${game.players[pIdx].name} ${isReady ? '已准备' : '取消了准备'} (${readyCount}/${humanCount})`
+    });
+  });
+
   // --- GAME FLOW ---
   socket.on('start-game', () => {
     const game = getGame(socket);
@@ -2607,6 +2628,16 @@ io.on('connection', (socket) => {
       return emitToPlayer(socket, 'system-message', {
         text: '至少需要4名玩家才能开始游戏'
       });
+    }
+    // Check that all human players are ready
+    if (!game.soloMode) {
+      const notReady = game.players.filter(p => !p.isAI && !p.ready);
+      if (notReady.length > 0) {
+        const names = notReady.map(p => p.name).join('、');
+        return emitToPlayer(socket, 'system-message', {
+          text: `还有玩家未准备：${names}。需要所有真人玩家准备后才能开始游戏。`
+        });
+      }
     }
 
     // Fill remaining slots with AI bots if fewer than 6 human players
@@ -2926,7 +2957,7 @@ io.on('connection', (socket) => {
         if (item.hidden) return; // skip hidden clues
         if (destroyedItems.includes(key)) return; // skip destroyed clues
         if (!item.act || item.act > prevAct) return; // only previous acts
-        if (!game.foundClues.includes(key)) return; // only clues that were actually found
+        // All non-hidden, non-destroyed clues from previous acts become public
         if (!game.sharedClueKeys) game.sharedClueKeys = [];
         if (!game.sharedClueKeys.includes(key)) {
           game.sharedClueKeys.push(key);
@@ -3483,6 +3514,11 @@ io.on('connection', (socket) => {
       return emitToPlayer(socket, 'system-message', { text: '这个区域还没有可调查的新线索...' });
     }
 
+    // Check if the clue is already public/shared (from a previous act) — cannot collect it
+    if (game.sharedClueKeys && game.sharedClueKeys.includes(itemKey)) {
+      return emitToPlayer(socket, 'system-message', { text: `这条线索已经公开了：${item.name}` });
+    }
+
     const player = game.players[pIdx];
     if (item.location !== player.currentRoom) return;
 
@@ -3965,6 +4001,7 @@ io.on('connection', (socket) => {
       const code = game.roomCode;
       if (games[code]) delete games[code];
       socket.currentRoom = null;
+      socket.leave(code);
       return;
     }
 
@@ -4024,8 +4061,10 @@ io.on('connection', (socket) => {
     if (game.soloMode) {
       if (game.timer) clearTimeout(game.timer);
       clearAITimers(game);
-      if (games[game.roomCode]) delete games[game.roomCode];
+      const code = game.roomCode;
+      if (games[code]) delete games[code];
       socket.currentRoom = null;
+      socket.leave(code);
     }
   });
 

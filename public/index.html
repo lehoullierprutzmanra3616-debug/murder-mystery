@@ -1477,6 +1477,12 @@
     </div>
     <div class="waiting-players" id="waitingPlayers"></div>
     <p style="color: var(--text-dim); font-size: 13px;">需要 4-6 名玩家才能开始，不足 6 人时自动补充 AI</p>
+    <div id="readySection" style="margin-top: 16px; text-align: center;">
+      <button class="btn btn-gold btn-block" id="readyBtn" onclick="toggleReady()" style="max-width: 280px; margin: 0 auto;">
+        ✅ 准备
+      </button>
+      <p id="readyHint" style="color: var(--text-dim); font-size: 12px; margin-top: 8px;"></p>
+    </div>
   </div>
 </div>
 
@@ -3031,6 +3037,7 @@ function createRoom() {
       roomCode = res.roomCode;
       socket.emit('join-room', roomCode, name, (r) => {
         if (r.success) {
+          window._leftGame = false;
           window._myName = name;
           sessionStorage.setItem('ms_session', JSON.stringify({ roomCode, name }));
           enterWaitingRoom(roomCode);
@@ -3049,6 +3056,7 @@ function joinRoom() {
   if (!code) return showError('请输入房间代码');
   socket.emit('join-room', code, name, (res) => {
     if (res.success) {
+      window._leftGame = false;
       roomCode = res.roomCode;
       window._myName = name;
       if (typeof res.playerId !== 'undefined') {
@@ -3073,6 +3081,7 @@ function startSolo() {
   const finalName = nameEl.value.trim() || '侦探';
   socket.emit('start-solo', finalName, (res) => {
     if (res.success) {
+      window._leftGame = false;
       roomCode = res.roomCode;
       window._myName = finalName;
       sessionStorage.setItem('ms_session', JSON.stringify({ roomCode, name: finalName }));
@@ -3154,6 +3163,10 @@ function startGame() {
 socket.on('room-info', () => {});
 
 socket.on('game-state', (state) => {
+  // Ignore stale game-state events after leaving a game
+  if (window._leftGame && document.getElementById('lobby') && document.getElementById('lobby').classList.contains('active')) {
+    return;
+  }
   gamePhase = state.phase;
   allPlayers = state.players;
   lastGameState = state;
@@ -3214,7 +3227,15 @@ socket.on('game-state', (state) => {
 
   // Close act transition overlay when no longer waiting
   if (state.phase !== 'act_transition') {
-    document.getElementById('actTransitionOverlay').classList.remove('active');
+    const actOverlay = document.getElementById('actTransitionOverlay');
+    if (actOverlay) actOverlay.classList.remove('active');
+  }
+
+  // Remove DM question time-limit notice when no longer in DM question phase
+  if (state.phase !== 'dm_question') {
+    const dmNotice = document.getElementById('dmTimeLimitNotice');
+    if (dmNotice) dmNotice.remove();
+    if (dmTimeLimitInterval) { clearInterval(dmTimeLimitInterval); dmTimeLimitInterval = null; }
   }
 
   // Phase transition banners
@@ -3261,6 +3282,10 @@ socket.on('game-state', (state) => {
 function renderWaitingPlayers(state) {
   const container = document.getElementById('waitingPlayers');
   let html = '';
+  const humanPlayers = state.players.filter(p => p && !p.isAI);
+  const readyCount = humanPlayers.filter(p => p.ready).length;
+  const allReady = humanPlayers.length >= 4 && readyCount === humanPlayers.length;
+
   for (let i = 0; i < 6; i++) {
     const p = state.players[i];
     if (p) {
@@ -3269,9 +3294,15 @@ function renderWaitingPlayers(state) {
         : p.isAI
           ? ' <span style="font-size:10px;color:var(--accent-purple);">AI</span>'
           : '';
-      html += `<div class="waiting-player-card filled">
+      const readyBadge = (!p.isAI && state.phase === 'waiting')
+        ? p.ready
+          ? ' <span style="font-size:10px;background:rgba(39,174,96,0.25);color:var(--accent-green);padding:2px 6px;border-radius:10px;">已准备</span>'
+          : ' <span style="font-size:10px;background:rgba(231,76,60,0.2);color:var(--accent-red);padding:2px 6px;border-radius:10px;">未准备</span>'
+        : '';
+      const cardStyle = (!p.isAI && p.ready) ? 'border-color: var(--accent-green);' : '';
+      html += `<div class="waiting-player-card filled" style="${cardStyle}">
         <div class="avatar">${p.avatar || '?'}</div>
-        <div class="name">${p.name}${aiTag}</div>
+        <div class="name">${p.name}${aiTag}${readyBadge}</div>
       </div>`;
     } else {
       html += `<div class="waiting-player-card">
@@ -3281,7 +3312,47 @@ function renderWaitingPlayers(state) {
     }
   }
   container.innerHTML = html;
-  document.getElementById('startBtn').style.display = (state.players.length >= 4) ? '' : 'none';
+
+  // Show/hide start button (need 4+ players, all ready)
+  const startBtn = document.getElementById('startBtn');
+  startBtn.style.display = (state.players.length >= 4) ? '' : 'none';
+  startBtn.disabled = !allReady;
+  startBtn.style.opacity = allReady ? '1' : '0.5';
+  startBtn.textContent = allReady ? '开始游戏' : '等待玩家准备...';
+
+  // Show/hide ready section (non-host human players, waiting phase, multiplayer)
+  const readySection = document.getElementById('readySection');
+  if (state.phase === 'waiting' && !state.soloMode) {
+    readySection.style.display = '';
+    const readyBtn = document.getElementById('readyBtn');
+    const readyHint = document.getElementById('readyHint');
+    // Find my player
+    const me = state.players.find(p => !p.isAI && p.name === (window._myName || ''));
+    if (me) {
+      if (me.ready) {
+        readyBtn.textContent = '❌ 取消准备';
+        readyBtn.style.background = 'var(--bg-secondary)';
+        readyBtn.style.borderColor = 'var(--border)';
+      } else {
+        readyBtn.textContent = '✅ 准备';
+        readyBtn.style.background = '';
+        readyBtn.style.borderColor = '';
+      }
+      readyHint.textContent = `已准备 ${readyCount}/${humanPlayers.length} 人`;
+    }
+  } else {
+    readySection.style.display = 'none';
+  }
+}
+
+function toggleReady() {
+  const me = lastGameState.players && lastGameState.players.find(p => !p.isAI && p.name === (window._myName || ''));
+  const isReady = me ? !me.ready : false;
+  socket.emit('player-ready', isReady, (res) => {
+    if (res.success) {
+      // State update will come via game-state
+    }
+  });
 }
 
 function renderCharSelect(state) {
@@ -3608,12 +3679,12 @@ function renderRoomView(roomKey, playersHere, serverDesc) {
         </button>`;
         return;
       }
-      // If claimed but shared, show real details but non-interactive
-      if (claimed && isShared) {
+      // If shared (public from previous act) but not found by self — show real details, non-interactive
+      if (isShared && !found) {
         html += `<button class="room-item-btn claimed" disabled>
           ${thumbHtml}
           <div>
-            <div class="item-label">${displayName}</div>
+            <div class="item-label">${displayName} 📢</div>
             <div class="item-hint">${displayHint}</div>
           </div>
         </button>`;
@@ -5053,6 +5124,10 @@ function switchTab(tab) {
 
 // ========== DISCUSSION / VOTE ==========
 socket.on('game-state', (state) => {
+  // Ignore stale game-state events after leaving a game
+  if (window._leftGame && document.getElementById('lobby') && document.getElementById('lobby').classList.contains('active')) {
+    return;
+  }
   gamePhase = state.phase;
   allPlayers = state.players;
   lastGameState = state;
@@ -5195,21 +5270,29 @@ function restartGame() {
 }
 
 function leaveGame() {
+  // Set flag to ignore stale game-state events after leaving
+  window._leftGame = true;
   socket.emit('restart-game');
   socket.emit('leave-room');
   resetClientState();
   sessionStorage.removeItem('ms_session');
   // Close all overlays
-  document.getElementById('storyOverlay').classList.remove('active');
-  document.getElementById('charSelectOverlay').classList.remove('active');
-  document.getElementById('characterOverlay').classList.remove('active');
-  document.getElementById('resultsOverlay').classList.remove('active');
-  document.getElementById('puzzleOverlay').classList.remove('active');
-  document.getElementById('voteOverlay').classList.remove('active');
+  const overlayIds = ['storyOverlay','charSelectOverlay','characterOverlay','resultsOverlay','puzzleOverlay','voteOverlay','leaveConfirmOverlay'];
+  overlayIds.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.remove('active');
+  });
+  // Clear game action buttons
+  const actions = document.getElementById('gameActions');
+  if (actions) actions.innerHTML = '';
+  // Hide header timer
+  document.getElementById('headerTimer').style.display = 'none';
+  stopTimer();
   showScreen('lobby');
 }
 
 function leaveWaitingRoom() {
+  window._leftGame = true;
   sessionStorage.removeItem('ms_session');
   socket.emit('leave-room');
   roomCode = '';
@@ -5221,6 +5304,7 @@ function resetClientState() {
   inventory = [];
   myCharacter = null;
   myPlayerId = -1;
+  allPlayers = [];
   hideTaskButton();
   currentRoom = 'entrance';
   roomEntered = false;
@@ -5238,6 +5322,16 @@ function resetClientState() {
     const b = document.getElementById(id);
     if (b) { b.disabled = false; b.style.opacity = '1'; }
   });
+  // Clear DM time-limit notice
+  const dmNotice = document.getElementById('dmTimeLimitNotice');
+  if (dmNotice) dmNotice.remove();
+  if (dmTimeLimitInterval) { clearInterval(dmTimeLimitInterval); dmTimeLimitInterval = null; }
+  // Clear game action buttons
+  const actions = document.getElementById('gameActions');
+  if (actions) actions.innerHTML = '';
+  // Hide header timer
+  const headerTimer = document.getElementById('headerTimer');
+  if (headerTimer) headerTimer.style.display = 'none';
 }
 
 // ========== TIMER ==========
@@ -5339,6 +5433,7 @@ socket.on('connect', () => {
     if (!savedCode || !savedName) return;
     socket.emit('reconnect-player', savedCode, savedName, (res) => {
       if (res.success) {
+        window._leftGame = false;
         roomCode = res.roomCode;
         myPlayerId = res.playerId;
         window._myName = savedName;
