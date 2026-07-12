@@ -1801,9 +1801,7 @@ function aiVoteEnhanced(game, pIdx) {
   const voterChar = CHARACTERS[charIdx];
   const targetChar = CHARACTERS[game.characterAssignments[voteTarget]];
 
-  emitToRoom(game.roomCode, 'system-message', {
-    text: `🗳️ ${voterChar.name} (AI) 投票给了 ${targetChar.name}`
-  });
+  sysMsg(game.roomCode, `🗳️ ${voterChar.name} (AI) 投票给了 ${targetChar.name}`);
 
   // Dynamically generate vote reasoning
   const targetCharIdxForVote = game.characterAssignments[voteTarget];
@@ -2013,9 +2011,7 @@ function aiExplore(game, pIdx) {
         });
         if (!game.sharedClueKeys) game.sharedClueKeys = [];
         if (!game.sharedClueKeys.includes(item.key)) game.sharedClueKeys.push(item.key);
-        emitToRoom(game.roomCode, 'system-message', {
-          text: `📜 ${charName} 向所有人展示了：${item.name}`
-        });
+        sysMsg(game.roomCode, `📜 ${charName} 向所有人展示了：${item.name}`);
 
         // Dynamically generate clue share dialogue — only said when the clue is publicly shared
         const line = generateAILine(game, charIdx, pIdx, { type: 'clue_share', clueKey: item.key });
@@ -2221,9 +2217,7 @@ function checkHiddenClues(game, pIdx, msg) {
       const charAvatar = CHARACTERS[charIdx].avatar;
 
       io.to(player.id).emit('hidden-clue-found', { itemKey: key, item });
-      emitToRoom(game.roomCode, 'system-message', {
-        text: `💫 ${charAvatar} ${charName} 在交流中触发了隐藏线索：${item.name}`
-      });
+      sysMsg(game.roomCode, `💫 ${charAvatar} ${charName} 在交流中触发了隐藏线索：${item.name}`);
 
       // Also add to chat as a DM message
       const dmMsg = {
@@ -2267,6 +2261,15 @@ function emitToRoom(roomCode, event, data) {
 
 function emitToPlayer(socket, event, data) {
   socket.emit(event, data);
+}
+
+// Helper: send a system message and log it to chatLog for reconnection replay
+function sysMsg(roomCode, text) {
+  const game = games[roomCode];
+  if (game) {
+    game.chatLog.push({ type: 'system', text, timestamp: Date.now() });
+  }
+  emitToRoom(roomCode, 'system-message', { text });
 }
 
 function emitGameState(roomCode) {
@@ -2362,7 +2365,7 @@ const STORY_SEGMENTS = [
 // DM-LED ROUNDS (multi-act exploration)
 // ============================================================
 
-const ROUND_TIME = 900; // 15 minutes per act
+const ROUND_TIME = 1200; // 20 minutes per act
 
 const DM_ROUNDS = [
   // --- ACT 1: Initial crime scene ---
@@ -2506,9 +2509,7 @@ io.on('connection', (socket) => {
         if (game._cleanupTimer) { clearTimeout(game._cleanupTimer); game._cleanupTimer = null; }
 
         callback({ success: true, roomCode, playerId: existingIdx });
-        emitToRoom(roomCode, 'system-message', {
-          text: `${playerName} 重新加入了游戏！`
-        });
+        sysMsg(roomCode, `${playerName} 重新加入了游戏！`);
         emitGameState(roomCode);
 
         // Re-send phase-specific data so client can restore UI
@@ -2540,8 +2541,29 @@ io.on('connection', (socket) => {
     if (game.players.length >= MAX_PLAYERS) {
       return callback({ success: false, error: '房间已满（最多6人）' });
     }
-    if (game.players.some(p => p.name === playerName)) {
+    // Check for name conflict — but allow a disconnected player to reclaim their slot
+    const existingPlayer = game.players.find(p => p.name === playerName);
+    if (existingPlayer && existingPlayer.connected) {
       return callback({ success: false, error: '该昵称已被使用' });
+    }
+    if (existingPlayer) {
+      // Reclaim the slot of a disconnected player with the same name
+      const existingIdx = game.players.indexOf(existingPlayer);
+      // Clean up old socket mapping
+      if (game.playerMap[existingPlayer.id]) delete game.playerMap[existingPlayer.id];
+      existingPlayer.id = socket.id;
+      existingPlayer.connected = true;
+      game.playerMap[socket.id] = existingIdx;
+      socket.join(roomCode);
+      socket.currentRoom = roomCode;
+
+      // Cancel any pending room cleanup
+      if (game._cleanupTimer) { clearTimeout(game._cleanupTimer); game._cleanupTimer = null; }
+
+      callback({ success: true, roomCode, playerId: existingIdx });
+      sysMsg(roomCode, `${playerName} 重新加入了房间`);
+      emitGameState(roomCode);
+      return;
     }
 
     socket.join(roomCode);
@@ -2563,9 +2585,7 @@ io.on('connection', (socket) => {
     emitGameState(roomCode);
 
     // Notify
-    emitToRoom(roomCode, 'system-message', {
-      text: `${playerName} 加入了房间 (${game.players.length}/${MAX_PLAYERS})`
-    });
+    sysMsg(roomCode, `${playerName} 加入了房间 (${game.players.length}/${MAX_PLAYERS})`);
   });
 
   // --- CHARACTER SELECTION (multiplayer, after story phase) ---
@@ -2593,9 +2613,7 @@ io.on('connection', (socket) => {
     // Check if all human players have selected
     const totalHumans = game.players.filter(p => p.connected && !p.isAI).length;
     if (game.selectionAcks.size >= totalHumans) {
-      emitToRoom(game.roomCode, 'system-message', {
-        text: '✅ 所有玩家已选择角色，进入角色介绍'
-      });
+      sysMsg(game.roomCode, '✅ 所有玩家已选择角色，进入角色介绍');
       game.selectionAcks.clear();
       assignCharacters(game);
     }
@@ -2615,9 +2633,7 @@ io.on('connection', (socket) => {
 
     const readyCount = game.players.filter(p => !p.isAI && p.ready).length;
     const humanCount = game.players.filter(p => !p.isAI).length;
-    emitToRoom(game.roomCode, 'system-message', {
-      text: `${game.players[pIdx].name} ${isReady ? '已准备' : '取消了准备'} (${readyCount}/${humanCount})`
-    });
+    sysMsg(game.roomCode, `${game.players[pIdx].name} ${isReady ? '已准备' : '取消了准备'} (${readyCount}/${humanCount})`);
   });
 
   // --- GAME FLOW ---
@@ -2660,9 +2676,7 @@ io.on('connection', (socket) => {
           });
           game.playerMap[aiId] = pIdx;
         }
-        emitToRoom(game.roomCode, 'system-message', {
-          text: `🤖 已自动补充 ${aiNeeded} 位 AI 玩家：${aiNames.join('、')}`
-        });
+        sysMsg(game.roomCode, `🤖 已自动补充 ${aiNeeded} 位 AI 玩家：${aiNames.join('、')}`);
       }
       // Character assignment now happens AFTER the character_selection phase (see emitStorySegment / assignCharacters)
     }
@@ -2720,12 +2734,8 @@ io.on('connection', (socket) => {
     callback({ success: true, roomCode, humanCharIdx: humanChar });
 
     emitGameState(roomCode);
-    emitToRoom(roomCode, 'system-message', {
-      text: `${playerName} 创建了单人模式房间 (${roomCode})`
-    });
-    emitToRoom(roomCode, 'system-message', {
-      text: '🤖 AI玩家已就绪：' + AI_NAMES.join('、')
-    });
+    sysMsg(roomCode, `${playerName} 创建了单人模式房间 (${roomCode})`);
+    sysMsg(roomCode, '🤖 AI玩家已就绪：' + AI_NAMES.join('、'));
 
     // Start the game immediately
     game.phase = 'story';
@@ -2756,9 +2766,7 @@ io.on('connection', (socket) => {
     game.phase = 'character_selection';
     game.characterSelections = {};
     game.selectionAcks = new Set();
-    emitToRoom(game.roomCode, 'system-message', {
-      text: '🎭 请所有玩家选择自己的角色，选择完成后进入角色介绍'
-    });
+    sysMsg(game.roomCode, '🎭 请所有玩家选择自己的角色，选择完成后进入角色介绍');
     emitGameState(game.roomCode);
   }
 
@@ -2866,9 +2874,7 @@ io.on('connection', (socket) => {
       if (p.isAI) game.characterAcks.add(i);
     });
 
-    emitToRoom(game.roomCode, 'system-message', {
-      text: '🎮 角色已分配！请阅读你的剧本，完成后点击"我已了解"。'
-    });
+    sysMsg(game.roomCode, '🎮 角色已分配！请阅读你的剧本，完成后点击"我已了解"。');
     emitGameState(game.roomCode);
   }
 
@@ -2888,9 +2894,7 @@ io.on('connection', (socket) => {
       });
     }
 
-    emitToRoom(game.roomCode, 'system-message', {
-      text: `${game.players[pIdx].name} 已了解角色`
-    });
+    sysMsg(game.roomCode, `${game.players[pIdx].name} 已了解角色`);
     emitGameState(game.roomCode);
 
     const totalPlayers = game.players.filter(p => p.connected && !p.isAI).length;
@@ -2902,9 +2906,7 @@ io.on('connection', (socket) => {
       // Start AI exploration if any AI players exist
       if (hasAIPlayers(game)) {
         startAIExploration(game);
-        emitToRoom(game.roomCode, 'system-message', {
-          text: '🤖 AI玩家开始自主探索，他们会发现线索并分享给你。'
-        });
+        sysMsg(game.roomCode, '🤖 AI玩家开始自主探索，他们会发现线索并分享给你。');
       }
 
       // Start DM-led Act 1
@@ -2966,9 +2968,7 @@ io.on('connection', (socket) => {
       });
       // Notify all players that previous act clues are now public
       if (newlyShared.length > 0) {
-        emitToRoom(game.roomCode, 'system-message', {
-          text: `📢 前一幕的所有线索已自动公开（共${newlyShared.length}条），请查看线索区。`
-        });
+        sysMsg(game.roomCode, `📢 前一幕的所有线索已自动公开（共${newlyShared.length}条），请查看线索区。`);
         // Emit clue-shared events for each newly public clue
         newlyShared.forEach(clueKey => {
           const item = ITEMS[clueKey];
@@ -3041,8 +3041,8 @@ io.on('connection', (socket) => {
     game.dmAnswers = new Set();
     if (game.timer) clearTimeout(game.timer);
 
-    // Set 60s timer for DM question phase
-    game.timerEnd = Date.now() + 60 * 1000;
+    // Set 3-minute timer for DM question phase
+    game.timerEnd = Date.now() + 180 * 1000;
 
     emitToRoom(game.roomCode, 'dm-question', {
       question: round.question,
@@ -3052,19 +3052,17 @@ io.on('connection', (socket) => {
     emitGameState(game.roomCode);
 
     // DM also asks in chat for visibility
-    emitToRoom(game.roomCode, 'system-message', {
-      text: '🎭 DM提出了问题，请在聊天框中输入你们的答案。'
-    });
+    sysMsg(game.roomCode, '🎭 DM提出了问题，请在聊天框中输入你们的答案。');
 
-    // Send 60s countdown notice to all players
-    emitToRoom(game.roomCode, 'dm-time-limit', { seconds: 60 });
+    // Send 3-minute countdown notice to all players
+    emitToRoom(game.roomCode, 'dm-time-limit', { seconds: 180 });
 
-    // Auto-advance after 60s even if not enough answers
+    // Auto-advance after 3 minutes even if not enough answers
     const autoTimer = setTimeout(() => {
       if (game.dmQuestionActive) {
         advanceFromQuestion(game, actIndex);
       }
-    }, 60000);
+    }, 180000);
     game.dmTimers.push(autoTimer);
 
     // Force all AI players to answer the DM question — each exactly once, no repeats
@@ -3606,9 +3604,7 @@ io.on('connection', (socket) => {
           player.inventory.push(puzzle.reward_item);
         }
         emitToPlayer(socket, 'puzzle-result', { success: true, message: puzzle.reward_desc, rewardItem: puzzle.reward_item });
-        emitToRoom(game.roomCode, 'system-message', {
-          text: `🔓 ${game.players[pIdx].name} 成功解开了${puzzle.name}！`
-        });
+        sysMsg(game.roomCode, `🔓 ${game.players[pIdx].name} 成功解开了${puzzle.name}！`);
       } else {
         emitToPlayer(socket, 'puzzle-result', { success: false, message: '密码错误，请再试一次。' });
       }
@@ -3644,9 +3640,7 @@ io.on('connection', (socket) => {
         message: PUZZLES.secret_room.reward_desc,
         rewardItem: 'computer_files'
       });
-      emitToRoom(game.roomCode, 'system-message', {
-        text: `🔓 ${player.name} 用钥匙打开了密室！`
-      });
+      sysMsg(game.roomCode, `🔓 ${player.name} 用钥匙打开了密室！`);
     }
   });
 
@@ -3746,9 +3740,7 @@ io.on('connection', (socket) => {
     const totalPlayers = game.players.filter(p => p.connected && !p.isAI).length;
     const votedCount = game.endActVotes.size;
 
-    emitToRoom(game.roomCode, 'system-message', {
-      text: `${game.players[pIdx].name} 投票结束本环节 (${votedCount}/${totalPlayers})`
-    });
+    sysMsg(game.roomCode, `${game.players[pIdx].name} 投票结束本环节 (${votedCount}/${totalPlayers})`);
     emitGameState(game.roomCode);
 
     // Only proceed when ALL connected human players have voted
@@ -3829,9 +3821,7 @@ io.on('connection', (socket) => {
     game.destroyedItems.push(itemKey);
 
     const charName = CHARACTERS[game.characterAssignments[pIdx]].name;
-    emitToRoom(game.roomCode, 'system-message', {
-      text: `🔥 ${charName} 销毁了一份线索...`
-    });
+    sysMsg(game.roomCode, `🔥 ${charName} 销毁了一份线索...`);
     emitGameState(game.roomCode);
   });
 
@@ -3858,9 +3848,7 @@ io.on('connection', (socket) => {
       });
       if (!game.sharedClueKeys) game.sharedClueKeys = [];
       if (!game.sharedClueKeys.includes(itemKey)) game.sharedClueKeys.push(itemKey);
-      emitToRoom(game.roomCode, 'system-message', {
-        text: `📜 ${CHARACTERS[myCharIdx].name} 向所有人展示了：${item.name}`
-      });
+      sysMsg(game.roomCode, `📜 ${CHARACTERS[myCharIdx].name} 向所有人展示了：${item.name}`);
     } else {
       // Share with specific player
       const target = game.players[targetPlayerIdx];
@@ -3893,16 +3881,12 @@ io.on('connection', (socket) => {
     game.votes = {};
     game.timerEnd = Date.now() + VOTE_TIME * 1000;
     emitGameState(game.roomCode);
-    emitToRoom(game.roomCode, 'system-message', {
-      text: `🗳️ 投票阶段开始！你有 ${VOTE_TIME} 秒的时间投票选出你认为的凶手。`
-    });
+    sysMsg(game.roomCode, `🗳️ 投票阶段开始！你有 ${VOTE_TIME} 秒的时间投票选出你认为的凶手。`);
 
     // Start AI voting if any AI players exist
     if (hasAIPlayers(game)) {
       startAIVoting(game);
-      emitToRoom(game.roomCode, 'system-message', {
-        text: '🤖 AI玩家将根据线索分析进行投票...'
-      });
+      sysMsg(game.roomCode, '🤖 AI玩家将根据线索分析进行投票...');
     }
 
     if (game.timer) clearTimeout(game.timer);
@@ -3928,9 +3912,7 @@ io.on('connection', (socket) => {
 
     const voterChar = CHARACTERS[game.characterAssignments[pIdx]];
     const targetChar = CHARACTERS[game.characterAssignments[targetPlayerIdx]];
-    emitToRoom(game.roomCode, 'system-message', {
-      text: `🗳️ ${voterChar.name} 投票给了 ${targetChar.name}`
-    });
+    sysMsg(game.roomCode, `🗳️ ${voterChar.name} 投票给了 ${targetChar.name}`);
 
     // Check if all voted
     const connectedCount = game.players.filter(p => p.connected).length;
@@ -4012,7 +3994,7 @@ io.on('connection', (socket) => {
           game.players[pIdx].connected = false;
           clearAITimers(game);
           emitGameState(game.roomCode);
-          emitToRoom(game.roomCode, 'system-message', { text: `${game.players[pIdx].name} 离开了游戏` });
+          sysMsg(game.roomCode, `${game.players[pIdx].name} 离开了游戏`);
         }
       }
       return;
@@ -4043,14 +4025,14 @@ io.on('connection', (socket) => {
 
     emitGameState(roomCode);
     if (wasSoloMode) {
-      emitToRoom(roomCode, 'system-message', { text: '🔄 单人模式已重新开始！' });
+      sysMsg(roomCode, '🔄 单人模式已重新开始！');
       // Auto-start in solo mode
       newGame.phase = 'story';
       newGame.storyIndex = 0;
       emitGameState(roomCode);
       emitStorySegment(newGame);
     } else {
-      emitToRoom(roomCode, 'system-message', { text: '🔄 游戏已重新开始！等待房主开始新游戏...' });
+      sysMsg(roomCode, '🔄 游戏已重新开始！等待房主开始新游戏...');
     }
   });
 
@@ -4087,9 +4069,7 @@ io.on('connection', (socket) => {
       delete game.playerMap[socket.id];
       game.players.splice(pIdx, 1);
       game.players.forEach((p, i) => { game.playerMap[p.id] = i; });
-      emitToRoom(game.roomCode, 'system-message', {
-        text: `${player.name} 离开了房间`
-      });
+      sysMsg(game.roomCode, `${player.name} 离开了房间`);
       emitGameState(game.roomCode);
     } else {
       // Mid-game: mark as AI-controlled, keep slot open for rejoin
@@ -4098,9 +4078,7 @@ io.on('connection', (socket) => {
       player.wasHuman = true;
       // Start AI takeover for this player
       startAITakeover(game, pIdx);
-      emitToRoom(game.roomCode, 'system-message', {
-        text: `${player.name} 返回了大厅，AI 暂时接管了该角色（输入房间码可重新加入）`
-      });
+      sysMsg(game.roomCode, `${player.name} 返回了大厅，AI 暂时接管了该角色（输入房间码可重新加入）`);
       emitGameState(game.roomCode);
 
       // Check if ALL humans have left → schedule cleanup (5 min grace period for rejoin)
@@ -4139,9 +4117,7 @@ io.on('connection', (socket) => {
         player.isAI = true;
         player.wasHuman = true;
         startAITakeover(game, pIdx);
-        emitToRoom(game.roomCode, 'system-message', {
-          text: `${player.name} 断开了连接，AI 暂时接管了该角色`
-        });
+        sysMsg(game.roomCode, `${player.name} 断开了连接，AI 暂时接管了该角色`);
       } else {
         // Pre-game disconnect: release selections
         if (game.characterSelections && game.characterSelections[pIdx] !== undefined) {
@@ -4151,14 +4127,12 @@ io.on('connection', (socket) => {
           game.selectionAcks.delete(pIdx);
           const remainingHumans = game.players.filter(p => p.connected && !p.isAI).length;
           if (remainingHumans > 0 && game.selectionAcks.size >= remainingHumans && game.phase === 'character_selection') {
-            emitToRoom(game.roomCode, 'system-message', { text: '✅ 所有玩家已选择角色，进入角色介绍' });
+            sysMsg(game.roomCode, '✅ 所有玩家已选择角色，进入角色介绍');
             game.selectionAcks.clear();
             assignCharacters(game);
           }
         }
-        emitToRoom(game.roomCode, 'system-message', {
-          text: `${player.name} 断开了连接`
-        });
+        sysMsg(game.roomCode, `${player.name} 断开了连接`);
       }
       emitGameState(game.roomCode);
     }
@@ -4212,7 +4186,7 @@ io.on('connection', (socket) => {
 
     callback({ success: true, roomCode, playerId: pIdx });
     emitGameState(roomCode);
-    emitToRoom(roomCode, 'system-message', { text: `${playerName} 重新连接了` });
+    sysMsg(roomCode, `${playerName} 重新连接了`);
 
     // Re-send phase-specific data so the client can restore its UI
     if (game.phase === 'story' && game.storyIndex > 0) {
@@ -4237,6 +4211,11 @@ io.on('connection', (socket) => {
           }
         });
       }
+    }
+
+    // Replay chat history so the player sees previous messages after a page refresh
+    if (game.chatLog && game.chatLog.length > 0) {
+      io.to(socket.id).emit('chat-history', game.chatLog);
     }
   });
 });

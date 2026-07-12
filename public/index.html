@@ -4330,6 +4330,40 @@ function playVoiceMessage(btn, audioDataUrl) {
   }
 }
 
+socket.on('chat-history', (history) => {
+  // Clear existing messages and replay history (after page refresh / reconnection)
+  const chatDiv = document.getElementById('chatMessages');
+  chatDiv.innerHTML = '';
+  const charNames = ['曹文轩','林薇','张峰','苏婉清','赵强','周明远'];
+  history.forEach(data => {
+    if (data.type === 'system') {
+      const msg = document.createElement('div');
+      msg.className = 'chat-msg system';
+      msg.textContent = data.text;
+      chatDiv.appendChild(msg);
+    } else if (data.type === 'dm') {
+      const msg = document.createElement('div');
+      msg.className = 'chat-msg dm-msg';
+      msg.innerHTML = `<span class="dm-label">DM</span><img class="chat-avatar" src="assets/characters/dm_avatar.jpg" alt="" onerror="this.style.display='none'" style="border-color:var(--accent-gold)"><span class="sender">${data.avatar} ${data.characterName}</span>${escapeHtml(data.text)}`;
+      chatDiv.appendChild(msg);
+    } else {
+      // type === 'chat'
+      const msg = document.createElement('div');
+      msg.className = 'chat-msg';
+      const cIdx = charNames.indexOf(data.characterName);
+      const chatAvatarHtml = cIdx >= 0
+        ? `<img class="chat-avatar" src="assets/characters/character_${cIdx}.jpg" alt="" onerror="this.style.display='none'">`
+        : '';
+      msg.innerHTML = `${chatAvatarHtml}<span class="sender" style="color:${data.color}">${data.avatar} ${data.characterName}</span>${escapeHtml(data.text)}`;
+      chatDiv.appendChild(msg);
+    }
+  });
+  // Jump to bottom after replay
+  scrollChat(true);
+  clearUnread();
+  updateJumpButton();
+});
+
 socket.on('chat-message', (data) => {
   const msg = document.createElement('div');
   msg.className = 'chat-msg';
