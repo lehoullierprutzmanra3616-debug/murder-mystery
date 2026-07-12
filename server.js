@@ -2458,7 +2458,15 @@ io.on('connection', (socket) => {
 
   // --- LOBBY ---
   socket.on('create-room', (callback) => {
-    const roomCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+    // Use only unambiguous characters (no 0/O, 1/I/L, 2/Z, 5/S, 8/B, 6/G, 9/g)
+    const chars = 'ACDEFGHJKMNPQRTUVWXY347';
+    let roomCode = '';
+    do {
+      roomCode = '';
+      for (let i = 0; i < 6; i++) {
+        roomCode += chars[Math.floor(Math.random() * chars.length)];
+      }
+    } while (games[roomCode]); // ensure no collision
     games[roomCode] = createGame(roomCode);
     socket.join(roomCode);
     socket.currentRoom = roomCode;

@@ -121,8 +121,24 @@
   .room-code-display .code {
     font-size: 32px; font-weight: 800; letter-spacing: 8px;
     color: var(--accent-gold);
+    font-family: 'Courier New', Consolas, monospace;
+    display: inline-flex; gap: 6px; justify-content: center;
   }
-  .room-code-display .label { font-size: 12px; color: var(--text-dim); margin-bottom: 4px; }
+  .room-code-display .code .rc-char {
+    display: inline-block; width: 38px; line-height: 42px;
+    background: var(--bg-card); border-radius: 6px;
+    border: 1px solid var(--border);
+    text-align: center; letter-spacing: 0;
+  }
+  .room-code-display .label { font-size: 12px; color: var(--text-dim); margin-bottom: 8px; }
+  .room-code-display .copy-btn {
+    margin-top: 10px; padding: 6px 16px; font-size: 13px;
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: var(--radius); color: var(--text-secondary);
+    cursor: pointer; transition: all 0.2s;
+  }
+  .room-code-display .copy-btn:hover { border-color: var(--accent-gold); color: var(--accent-gold); }
+  .room-code-display .copy-btn:active { transform: scale(0.95); }
   .player-list { list-style: none; margin-top: 12px; }
   .player-list li {
     padding: 8px 12px; margin-bottom: 4px; border-radius: var(--radius);
@@ -264,6 +280,48 @@
     font-size: 11px;
     color: var(--text-dim);
     margin-top: 6px;
+  }
+
+  /* ========== CLUE TAKEN POPUP (centered standalone) ========== */
+  .clue-taken-popup {
+    display: none; position: fixed; inset: 0; z-index: 250;
+    background: rgba(0,0,0,0.85);
+    align-items: center; justify-content: center;
+    padding: 20px;
+    opacity: 0; transition: opacity 0.3s;
+  }
+  .clue-taken-popup.active { display: flex; opacity: 1; }
+  .clue-taken-popup .ctp-card {
+    background: var(--bg-card); border-radius: var(--radius-lg);
+    border: 1px solid rgba(231,76,60,0.4);
+    border-left: 4px solid var(--accent-red);
+    padding: 28px 32px; max-width: 380px; width: 100%;
+    box-shadow: 0 12px 48px rgba(231,76,60,0.2);
+    text-align: center;
+    animation: ctpPop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  @keyframes ctpPop {
+    from { transform: scale(0.8) translateY(20px); opacity: 0; }
+    to { transform: scale(1) translateY(0); opacity: 1; }
+  }
+  .clue-taken-popup .ctp-icon {
+    font-size: 40px; margin-bottom: 12px;
+  }
+  .clue-taken-popup .ctp-title {
+    font-size: 16px; font-weight: 700; color: var(--accent-red);
+    margin-bottom: 10px;
+  }
+  .clue-taken-popup .ctp-body {
+    font-size: 14px; color: var(--text-secondary); line-height: 1.6;
+    margin-bottom: 12px;
+  }
+  .clue-taken-popup .ctp-body b { color: var(--text-primary); }
+  .clue-taken-popup .ctp-hint {
+    font-size: 12px; color: var(--text-dim); line-height: 1.5;
+    padding-top: 10px; border-top: 1px solid var(--border);
+  }
+  .clue-taken-popup .ctp-countdown {
+    font-size: 11px; color: var(--text-dim); margin-top: 14px;
   }
   .game-body {
     flex: 1 1 0; display: flex; overflow: hidden; min-height: 0; min-width: 0;
@@ -987,6 +1045,31 @@
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 
+  /* ========== MOBILE TOUCH SCROLL FIX ==========
+     Ensure all scrollable areas support native touch scrolling.
+     touch-action: pan-y tells the browser to handle vertical panning natively.
+     -webkit-overflow-scrolling: touch enables momentum scrolling on iOS.
+     overscroll-behavior: contain prevents scroll chaining to parent. */
+  .game-content,
+  .inventory-list,
+  .chat-messages,
+  .players-list,
+  .notepad-body,
+  .results-overlay,
+  .story-overlay,
+  .char-select-overlay,
+  .character-overlay,
+  .task-modal,
+  .pm-messages {
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
+    overscroll-behavior: contain;
+  }
+  /* Custom scrollbar thumb should capture touch for dragging, not trigger native scroll */
+  .game-scroll-thumb {
+    touch-action: none;
+  }
+
   /* typing indicator */
   .typing-dots::after {
     content: ''; animation: dots 1.5s infinite;
@@ -1368,7 +1451,7 @@
     <div id="joinSection" style="display:none; margin-top: 16px;">
       <div class="input-group">
         <label>房间代码</label>
-        <input type="text" id="roomCode" placeholder="输入6位房间代码..." maxlength="6" style="text-transform:uppercase; letter-spacing: 4px;" autocomplete="off">
+        <input type="text" id="roomCode" placeholder="输入6位房间代码..." maxlength="6" style="text-transform:uppercase; letter-spacing: 4px; font-family: 'Courier New', Consolas, monospace; font-size: 18px; font-weight: 700;" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false">
       </div>
       <button class="btn btn-gold btn-block" onclick="joinRoom()">加入</button>
     </div>
@@ -1390,6 +1473,7 @@
     <div class="room-code-display">
       <div class="label">房间代码（分享给朋友加入）</div>
       <div class="code" id="roomCodeBig"></div>
+      <button class="copy-btn" onclick="copyRoomCode()">📋 复制房间代码</button>
     </div>
     <div class="waiting-players" id="waitingPlayers"></div>
     <p style="color: var(--text-dim); font-size: 13px;">需要 4-6 名玩家才能开始，不足 6 人时自动补充 AI</p>
@@ -1513,6 +1597,17 @@
 <!-- ========== PUZZLE MODAL ========== -->
 <div class="modal-overlay" id="puzzleModal">
   <div class="modal" id="puzzleContent"></div>
+</div>
+
+<!-- ========== CLUE TAKEN POPUP ========== -->
+<div class="clue-taken-popup" id="clueTakenPopup">
+  <div class="ctp-card">
+    <div class="ctp-icon">🔒</div>
+    <div class="ctp-title">线索已被获取</div>
+    <div class="ctp-body" id="ctpBody"></div>
+    <div class="ctp-hint">请通过聊天交流向对方询问该线索的详细信息</div>
+    <div class="ctp-countdown" id="ctpCountdown"></div>
+  </div>
 </div>
 
 <!-- ========== SHARE MODAL ========== -->
@@ -3000,8 +3095,51 @@ function showError(msg) {
 function enterWaitingRoom(code) {
   roomCode = code;
   document.getElementById('roomCodeLabel').textContent = code;
-  document.getElementById('roomCodeBig').textContent = code;
+  renderRoomCodeBig(code);
   showScreen('waiting');
+}
+
+function renderRoomCodeBig(code) {
+  const el = document.getElementById('roomCodeBig');
+  if (!el) return;
+  el.innerHTML = '';
+  for (const ch of code) {
+    const span = document.createElement('span');
+    span.className = 'rc-char';
+    span.textContent = ch;
+    el.appendChild(span);
+  }
+}
+
+function copyRoomCode() {
+  const code = roomCode || document.getElementById('roomCodeLabel').textContent;
+  if (!code) return;
+  const fallback = () => {
+    const ta = document.createElement('textarea');
+    ta.value = code;
+    ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); } catch(e) {}
+    document.body.removeChild(ta);
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(code).catch(fallback);
+  } else {
+    fallback();
+  }
+  // Visual feedback
+  const btn = document.querySelector('.copy-btn');
+  if (btn) {
+    const orig = btn.textContent;
+    btn.textContent = '✅ 已复制';
+    btn.style.color = 'var(--accent-green)';
+    btn.style.borderColor = 'var(--accent-green)';
+    setTimeout(() => {
+      btn.textContent = orig;
+      btn.style.color = '';
+      btn.style.borderColor = '';
+    }, 1500);
+  }
 }
 
 function startGame() {
@@ -3038,7 +3176,7 @@ socket.on('game-state', (state) => {
   if (state.phase === 'waiting') {
     renderWaitingPlayers(state);
     document.getElementById('roomCodeLabel').textContent = roomCode;
-    document.getElementById('roomCodeBig').textContent = roomCode;
+    renderRoomCodeBig(roomCode);
     showScreen('waiting');
   }
 
@@ -3269,6 +3407,9 @@ socket.on('character-assign', (data) => {
   }
 
   renderCharacterCard(data.character);
+  // Re-enable the ack button (it may be disabled from a previous game session)
+  const ackBtn = document.getElementById('charAckBtn');
+  if (ackBtn) { ackBtn.disabled = false; ackBtn.style.opacity = '1'; }
   document.getElementById('characterOverlay').classList.add('active');
   showTaskButton();
 });
@@ -3601,32 +3742,43 @@ function showClueLimitNotice(maxClues, currentActClueCount) {
 }
 
 function showClueTakenNotice(itemName, finderName) {
-  const list = document.getElementById('inventoryList');
-  if (!list) return;
+  const popup = document.getElementById('clueTakenPopup');
+  const body = document.getElementById('ctpBody');
+  const countdown = document.getElementById('ctpCountdown');
+  if (!popup || !body) return;
 
-  // Remove any existing taken notice
-  const existing = list.querySelector('.clue-taken-notice');
-  if (existing) existing.remove();
+  // Set content
+  body.innerHTML = `「${escapeHtml(itemName)}」已被 <b>${escapeHtml(finderName)}</b> 获取`;
 
-  const notice = document.createElement('div');
-  notice.className = 'clue-taken-notice';
-  notice.innerHTML = `
-    <div class="notice-title">🔒 线索已被获取</div>
-    <div class="notice-body">「${escapeHtml(itemName)}」已被 <b>${escapeHtml(finderName)}</b> 获取。</div>
-    <div class="notice-hint">请通过聊天交流向对方询问该线索的详细信息。</div>
-  `;
+  // Show popup
+  popup.classList.add('active');
 
-  list.insertBefore(notice, list.firstChild);
-
-  setTimeout(() => {
-    if (notice && notice.parentNode) {
-      notice.style.transition = 'opacity 0.4s';
-      notice.style.opacity = '0';
-      setTimeout(() => notice.remove(), 400);
+  // Countdown + auto-close after 6 seconds
+  let remaining = 6;
+  countdown.textContent = `${remaining} 秒后自动关闭`;
+  const interval = setInterval(() => {
+    remaining--;
+    if (remaining > 0) {
+      countdown.textContent = `${remaining} 秒后自动关闭`;
+    } else {
+      clearInterval(interval);
     }
-  }, 8000);
+  }, 1000);
 
-  switchTab('inventory');
+  // Clear any previous timer
+  if (popup._closeTimer) { clearTimeout(popup._closeTimer); clearInterval(popup._closeInterval); }
+  popup._closeInterval = interval;
+  popup._closeTimer = setTimeout(() => {
+    popup.classList.remove('active');
+  }, 6000);
+
+  // Click outside to close
+  popup.onclick = (e) => {
+    if (e.target === popup) {
+      popup.classList.remove('active');
+      clearInterval(interval);
+    }
+  };
 }
 
 function showItemFoundModal(item, itemKey) {
@@ -3821,15 +3973,18 @@ if (gameScrollThumb && gameContentEl) {
     }
   });
 
-  // Touch support
+  // Touch support — scoped to thumb only, with safety resets
   gameScrollThumb.addEventListener('touchstart', (e) => {
     isDragging = true;
     dragStartY = e.touches[0].clientY;
     dragStartScroll = gameContentEl.scrollTop;
     gameScrollThumb.classList.add('dragging');
+    e.stopPropagation(); // prevent content from also receiving this touch
   }, { passive: true });
 
-  document.addEventListener('touchmove', (e) => {
+  // Only listen to touchmove on the thumb element (not document-level)
+  // This prevents interference with native content scrolling
+  gameScrollThumb.addEventListener('touchmove', (e) => {
     if (!isDragging) return;
     const content = gameContentEl;
     const track = document.getElementById('gameScrollTrack');
@@ -3842,12 +3997,22 @@ if (gameScrollThumb && gameContentEl) {
     content.scrollTop = dragStartScroll + scrollDelta;
   }, { passive: true });
 
-  document.addEventListener('touchend', () => {
+  const endDrag = () => {
     if (isDragging) {
       isDragging = false;
       gameScrollThumb.classList.remove('dragging');
     }
-  });
+  };
+  gameScrollThumb.addEventListener('touchend', endDrag);
+  gameScrollThumb.addEventListener('touchcancel', endDrag);
+
+  // Safety: reset isDragging if a new touch starts on the content area (not the thumb)
+  // This prevents the stuck-drag state if a touchend was missed
+  if (gameContentEl) {
+    gameContentEl.addEventListener('touchstart', () => {
+      if (isDragging) endDrag();
+    }, { passive: true, capture: true });
+  }
 }
 
 // Update thumb on content changes via MutationObserver
@@ -5067,6 +5232,12 @@ function resetClientState() {
   renderInventory();
   stopTimer();
   AudioManager.stopBGM();
+  // Reset all ack buttons so they're clickable in the next game session
+  const btns = ['charAckBtn', 'storyAckBtn', 'actTransitionBtn'];
+  btns.forEach(id => {
+    const b = document.getElementById(id);
+    if (b) { b.disabled = false; b.style.opacity = '1'; }
+  });
 }
 
 // ========== TIMER ==========
@@ -5172,7 +5343,7 @@ socket.on('connect', () => {
         myPlayerId = res.playerId;
         window._myName = savedName;
         document.getElementById('roomCodeLabel').textContent = res.roomCode;
-        document.getElementById('roomCodeBig').textContent = res.roomCode;
+        renderRoomCodeBig(res.roomCode);
         // The server's emitGameState will route to the correct screen/overlay
         addSystemMsg('✅ 已恢复游戏会话');
       } else {
